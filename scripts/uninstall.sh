@@ -10,7 +10,7 @@ fi
 
 rm -f /etc/udev/rules.d/90-board-identify.rules
 rm -f /etc/systemd/system/board-identify@.service
-rm -f /etc/systemd/system/board-identify-cleanup@.service
+rm -f /etc/systemd/system/board-identify-cleanup.service
 rm -rf "$install_root"
 
 systemctl daemon-reload

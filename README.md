@@ -33,13 +33,13 @@ uv run mypy src
 ## Manual use
 
 ```bash
-sudo uv run board-identify identify /dev/ttyUSB0
+sudo .venv/bin/board-identify identify /dev/ttyUSB0
 ```
 
 Machine-readable output:
 
 ```bash
-uv run board-identify identify --json /dev/ttyUSB0
+sudo .venv/bin/board-identify identify --json /dev/ttyUSB0
 ```
 
 ## OS integration
@@ -47,7 +47,7 @@ uv run board-identify identify --json /dev/ttyUSB0
 The installer creates a uv-managed environment under `/opt/board-identify` and installs the supplied udev rules and systemd units.
 
 ```bash
-sudo ./scripts/install.sh
+sudo UV_BIN="$(command -v uv)" ./scripts/install.sh
 ```
 
 The systemd service executes:

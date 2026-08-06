@@ -24,7 +24,7 @@ cd "$install_root"
 
 install -m 0644 "$install_root/udev/90-board-identify.rules" /etc/udev/rules.d/
 install -m 0644 "$install_root/systemd/board-identify@.service" /etc/systemd/system/
-install -m 0644 "$install_root/systemd/board-identify-cleanup@.service" /etc/systemd/system/
+install -m 0644 "$install_root/systemd/board-identify-cleanup.service" /etc/systemd/system/
 
 systemctl daemon-reload
 udevadm control --reload-rules
