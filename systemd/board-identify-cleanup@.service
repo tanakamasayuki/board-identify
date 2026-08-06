@@ -1,0 +1,6 @@
+[Unit]
+Description=Clean stale board-identify links
+
+[Service]
+Type=oneshot
+ExecStart=/opt/board-identify/.venv/bin/board-identify cleanup

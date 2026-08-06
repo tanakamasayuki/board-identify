@@ -1,0 +1,8 @@
+[Unit]
+Description=Identify board connected as /dev/%I
+After=dev-%i.device
+
+[Service]
+Type=oneshot
+ExecStart=/opt/board-identify/.venv/bin/board-identify identify /dev/%I
+TimeoutStartSec=30
