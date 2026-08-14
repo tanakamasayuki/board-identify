@@ -2,6 +2,35 @@
 
 *[English](operations.md) | [日本語](operations.ja.md)*
 
+## インストール前に
+
+プローブはターゲットをリセットします。接続イベントのたびにボードのファームウェアが再起動します。導入は開発マシンに限定し、使える場面では `/dev/serial/by-id/` や USB ディスクリプタを照合する udev ルールを優先してください。README の [まず標準の仕組みを検討してください](../README.ja.md#まず標準の仕組みを検討してください) を参照。
+
+## WSL と USB/IP
+
+主対象の環境では、[usbipd-win](https://github.com/dorssel/usbipd-win) で Windows からデバイスを転送します。
+
+```powershell
+usbipd list                        # BUSID（例: 1-4）を確認する
+usbipd bind --busid 1-4            # 管理者権限で一度だけ
+usbipd attach --wsl --busid 1-4
+```
+
+WSL 側では `/dev/ttyUSB0` や `/dev/ttyACM0` として現れます。
+
+```bash
+# Windows 側の BUSID はここには現れず、パスは attach 順に従う。
+udevadm info -q property -n /dev/ttyUSB0 | grep -E 'ID_PATH|ID_SERIAL'
+# ID_PATH=platform-vhci_hcd.0-usb-0:1:1.0
+```
+
+この環境での注意点:
+
+- Windows 側での detach や `wsl --shutdown` は、物理的に抜いたときと同じ `remove` イベントになるため、リンクと状態は通常どおり掃除されます。
+- attach する順序が変わると `ID_PATH` が変わり、`/dev/serial/by-path/` も変わります。これが本ツールの存在理由です。
+- ルールを動作させるにはディストリビューション内で udev が動いている必要があります。`systemctl status systemd-udevd` で確認し、古い WSL 構成では `/etc/wsl.conf` の `[boot]` / `systemd=true` で systemd を有効にして `wsl --shutdown` で再起動してください。
+- リンクは `/run` 配下にあるため、WSL を起動するたびに作り直されます。
+
 ## インストール
 
 ```bash

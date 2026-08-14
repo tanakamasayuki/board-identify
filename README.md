@@ -14,6 +14,54 @@ The starter implementation identifies Espressif devices through `esptool` and cr
 
 The USB transport and the target board are treated separately. A CH340, FTDI, or CP210x serial number identifies the adapter, not necessarily the board behind it.
 
+## Use the standard mechanisms first
+
+This tool exists for the cases the standard Linux mechanisms cannot cover. **If any of
+the following works for your boards, use it instead** — it is stable, non-intrusive, and
+needs nothing installed:
+
+```bash
+# A per-device link built from USB VID/PID and the iSerial descriptor.
+ls -l /dev/serial/by-id/
+
+# A link built from the physical USB port path.
+ls -l /dev/serial/by-path/
+
+# What udev knows about a port.
+udevadm info -q property -n /dev/ttyUSB0 | grep -E 'ID_VENDOR_ID|ID_MODEL_ID|ID_SERIAL_SHORT|ID_PATH'
+```
+
+A udev rule pinning one adapter by its descriptors:
+
+```udev
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{serial}=="0001B2C3", SYMLINK+="esp32-lab1"
+```
+
+That covers adapters with a unique serial number (most FTDI, most CP210x, native-USB
+boards such as the ESP32-S3/C3 USB-Serial/JTAG, RP2040, and many Arduino boards), and
+fixed physical ports through `by-path`.
+
+Reach for `board-identify` only when neither applies, for example a CH340 that reports no
+serial number at all, several identical adapters, or the WSL + USB/IP case below.
+
+## Target environment: Linux on WSL over USB/IP
+
+The main target is Linux running under WSL with devices forwarded by
+[usbipd-win](https://github.com/dorssel/usbipd-win). This is where the standard
+mechanisms break down:
+
+- The Windows-side bus ID (`1-4` in `usbipd list`) does not exist inside Linux, so it
+  cannot be matched in a udev rule.
+- Forwarded devices appear on the virtual host controller, so `ID_PATH` and
+  `/dev/serial/by-path/` look like `platform-vhci_hcd.0-usb-0:1:1.0`. The port number
+  comes from the attach order, not from physical topology, and changes when devices are
+  attached in a different order.
+- `/dev/serial/by-id/` still works when the adapter reports a serial number, and is the
+  preferred option when it does.
+
+`board-identify` therefore asks the target board itself for an identifier that survives
+re-attach in any order.
+
 ## Requirements
 
 Install [uv](https://docs.astral.sh/uv/) before setting up the project.
@@ -90,6 +138,27 @@ See [`docs/operations.md`](docs/operations.md) for details and troubleshooting.
 3. Generate `<variant>-<unique-id>`.
 4. Atomically publish a symlink under `/run/board-identify/by-id/`.
 5. Store current state under `/run/board-identify/state/`.
+
+## Scope: development environments only
+
+Anything that cannot be pinned down by USB VID/PID is identified by talking to the
+target, and that probe **resets the board**: `esptool` drives DTR/RTS to enter the
+bootloader, so the running firmware is restarted every time the port appears.
+
+Consequences to accept before installing this:
+
+- A board plugged into this machine will reboot, including boards that are not the one
+  you care about, because the probe runs on every `ttyUSB*` and `ttyACM*` port.
+- A device that is mid-measurement, logging, or driving hardware will be interrupted.
+- Serial output produced during the probe window is lost.
+
+Use it on a development machine. Do not use it where an environment has to stay stable —
+production, unattended test rigs, or anything driving hardware that must not restart.
+There, pin the devices with `/dev/serial/by-id/` or a udev rule as shown above.
+
+Current status: the VID/PID fast path is not implemented yet, so **every** supported port
+is probed today, including devices that could have been identified from their descriptors
+alone. See [Planned probes](#planned-probes).
 
 ## Planned probes
 

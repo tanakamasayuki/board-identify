@@ -2,6 +2,43 @@
 
 *[English](operations.md) | [日本語](operations.ja.md)*
 
+## Before installing
+
+Probing resets the target: every plug event restarts the firmware on the board. Install
+this on a development machine only, and prefer `/dev/serial/by-id/` or a udev rule
+matching USB descriptors wherever those work. See the README section
+[Use the standard mechanisms first](../README.md#use-the-standard-mechanisms-first).
+
+## WSL and USB/IP
+
+On the main target environment, devices are forwarded from Windows with
+[usbipd-win](https://github.com/dorssel/usbipd-win):
+
+```powershell
+usbipd list                        # note the BUSID, for example 1-4
+usbipd bind --busid 1-4            # once, as administrator
+usbipd attach --wsl --busid 1-4
+```
+
+Inside WSL the device then appears as `/dev/ttyUSB0` or `/dev/ttyACM0`:
+
+```bash
+# The Windows BUSID is not represented here; the path follows the attach order.
+udevadm info -q property -n /dev/ttyUSB0 | grep -E 'ID_PATH|ID_SERIAL'
+# ID_PATH=platform-vhci_hcd.0-usb-0:1:1.0
+```
+
+Notes for this environment:
+
+- Detaching on the Windows side, or `wsl --shutdown`, produces the same `remove` event as
+  unplugging, so links and state are cleaned up normally.
+- Re-attaching in a different order changes `ID_PATH` and therefore
+  `/dev/serial/by-path/`, which is the reason this tool exists.
+- udev must be running inside the distribution for the rules to fire. Check with
+  `systemctl status systemd-udevd`; on older WSL setups enable systemd through
+  `/etc/wsl.conf` (`[boot]` / `systemd=true`) and restart with `wsl --shutdown`.
+- The links live under `/run`, so they are recreated from scratch on every WSL start.
+
 ## Install
 
 ```bash

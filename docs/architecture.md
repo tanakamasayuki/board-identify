@@ -47,14 +47,34 @@ link or a half-written state file.
 5. `board-identify cleanup` additionally sweeps links and state that were left behind,
    for instance after a reboot of the daemon or an unclean stop.
 
+## Why not the standard mechanisms
+
+`/dev/serial/by-id/`, `/dev/serial/by-path/`, and a udev rule matching
+`ATTRS{idVendor}`, `ATTRS{idProduct}`, and `ATTRS{serial}` are the right answer whenever
+they apply, and they cost nothing at plug time. This project targets what is left:
+
+- Adapters that report no serial number, such as most CH340 modules, so `by-id` collapses
+  several boards onto one name.
+- Devices forwarded into WSL over USB/IP, where the Windows bus ID is invisible to Linux
+  and `by-path` reflects the attach order on `vhci_hcd` rather than physical topology.
+
+In both cases the only identifier that survives a re-attach comes from the target itself,
+which is what a probe reads.
+
 ## Known limitations
 
-- Probing is intrusive. `esptool` toggles DTR/RTS, which resets the attached board and
-  can interrupt an application running on a non-Espressif device on the same port.
+- Anything that cannot be pinned down by USB VID/PID is identified by talking to the
+  target, which resets it. `esptool` toggles DTR/RTS to enter the bootloader, so the
+  firmware restarts on every plug event. This makes the project a development-environment
+  tool; it is not suitable where an environment must stay stable.
+- The VID/PID fast path is not implemented yet, so every `ttyUSB*` and `ttyACM*` port is
+  probed today, including devices that could be identified from their descriptors alone
+  and devices of other vendors entirely.
 - A stale link cannot be detected once the kernel has handed the same node name to
   another device. That case is resolved by the next `publish()` for that port, not by
   `cleanup`.
 - Two ports reporting the same board ID share one link; the last publish wins and the
   state of the older port is dropped by the next cleanup.
 
-See also [Identifier format](identifier-format.md) and [Adding a probe](adding-a-probe.md).
+See also [Identifier format](identifier-format.md), [Adding a probe](adding-a-probe.md), and
+[Operations](operations.md).
