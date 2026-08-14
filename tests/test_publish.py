@@ -1,19 +1,136 @@
+import json
 from pathlib import Path
 
-from board_identify.identify import publish, remove_port
+import pytest
+
+from board_identify.identify import identify_port, publish, read_state, remove_port
 from board_identify.model import Identification
 
 
-def test_publish_and_remove(tmp_path: Path) -> None:
-    result = Identification(
-        port=Path("/dev/ttyUSB9"),
+def make_identification(port: Path, unique_id: str = "7cdfa1123456") -> Identification:
+    return Identification(
+        port=port,
         family="espressif",
         variant="esp32-s3",
-        unique_id="7cdfa1123456",
+        unique_id=unique_id,
         id_source="target-mac",
     )
+
+
+def test_publish_and_remove(tmp_path: Path) -> None:
+    result = make_identification(Path("/dev/ttyUSB9"))
     link = publish(result, runtime_dir=tmp_path)
+
     assert link.is_symlink()
     assert link.readlink() == Path("/dev/ttyUSB9")
     assert remove_port("ttyUSB9", runtime_dir=tmp_path)
-    assert not link.exists()
+    assert not link.is_symlink()
+
+
+def test_publish_writes_state(tmp_path: Path) -> None:
+    result = make_identification(Path("/dev/ttyUSB9"))
+    publish(result, runtime_dir=tmp_path)
+
+    state = json.loads((tmp_path / "state" / "ttyUSB9.json").read_text(encoding="utf-8"))
+    assert state["board_id"] == "esp32-s3-7cdfa1123456"
+    assert state["port"] == "/dev/ttyUSB9"
+    assert read_state("ttyUSB9", runtime_dir=tmp_path) == state
+
+
+def test_publish_is_idempotent(tmp_path: Path) -> None:
+    result = make_identification(Path("/dev/ttyUSB9"))
+    first = publish(result, runtime_dir=tmp_path)
+    second = publish(result, runtime_dir=tmp_path)
+
+    assert first == second
+    assert second.is_symlink()
+    assert list((tmp_path / "by-id").iterdir()) == [second]
+
+
+def test_republishing_a_port_drops_the_previous_link(tmp_path: Path) -> None:
+    old = publish(make_identification(Path("/dev/ttyUSB9")), runtime_dir=tmp_path)
+    new = publish(
+        make_identification(Path("/dev/ttyUSB9"), unique_id="aabbcc112233"),
+        runtime_dir=tmp_path,
+    )
+
+    assert not old.is_symlink()
+    assert new.is_symlink()
+    assert sorted(p.name for p in (tmp_path / "by-id").iterdir()) == [new.name]
+
+
+def test_publish_leaves_no_temporary_files(tmp_path: Path) -> None:
+    publish(make_identification(Path("/dev/ttyUSB9")), runtime_dir=tmp_path)
+
+    for directory in (tmp_path / "by-id", tmp_path / "state"):
+        assert not list(directory.glob("*.tmp"))
+        assert not list(directory.glob(".*"))
+
+
+def test_remove_port_without_state(tmp_path: Path) -> None:
+    assert remove_port("ttyUSB9", runtime_dir=tmp_path) is False
+
+
+def test_remove_port_keeps_a_link_owned_by_another_port(tmp_path: Path) -> None:
+    publish(make_identification(Path("/dev/ttyUSB9")), runtime_dir=tmp_path)
+    # The same board reappears on a different port and takes over the link.
+    link = publish(make_identification(Path("/dev/ttyUSB8")), runtime_dir=tmp_path)
+
+    assert remove_port("ttyUSB9", runtime_dir=tmp_path)
+    assert link.is_symlink()
+    assert link.readlink() == Path("/dev/ttyUSB8")
+
+
+def test_remove_port_discards_unreadable_state(tmp_path: Path) -> None:
+    state_path = tmp_path / "state" / "ttyUSB9.json"
+    state_path.parent.mkdir(parents=True)
+    state_path.write_text("{not json", encoding="utf-8")
+
+    assert remove_port("ttyUSB9", runtime_dir=tmp_path)
+    assert not state_path.exists()
+
+
+def test_identify_port_requires_an_existing_device(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        identify_port(tmp_path / "ttyUSB9")
+
+
+def test_identify_port_uses_the_first_matching_probe(tmp_path: Path) -> None:
+    port = tmp_path / "ttyUSB9"
+    port.touch()
+    expected = make_identification(port)
+
+    class Silent:
+        name = "silent"
+
+        def supports(self, port: Path) -> bool:
+            return True
+
+        def identify(self, port: Path) -> Identification | None:
+            return None
+
+    class Loud:
+        name = "loud"
+
+        def supports(self, port: Path) -> bool:
+            return True
+
+        def identify(self, port: Path) -> Identification | None:
+            return expected
+
+    class Skipped:
+        name = "skipped"
+
+        def supports(self, port: Path) -> bool:
+            return False
+
+        def identify(self, port: Path) -> Identification | None:
+            raise AssertionError("must not run")
+
+    assert identify_port(port, probes=[Skipped(), Silent(), Loud()]) == expected
+
+
+def test_identify_port_with_no_probes_returns_none(tmp_path: Path) -> None:
+    port = tmp_path / "ttyUSB9"
+    port.touch()
+    assert identify_port(port, probes=[]) is None

@@ -1,5 +1,9 @@
+# Identify boards as they appear and drop their links when they disappear.
 ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyUSB*", TAG+="systemd", ENV{SYSTEMD_WANTS}+="board-identify@%k.service"
 ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyACM*", TAG+="systemd", ENV{SYSTEMD_WANTS}+="board-identify@%k.service"
 
-ACTION=="remove", SUBSYSTEM=="tty", KERNEL=="ttyUSB*", TAG+="systemd", RUN+="/usr/bin/systemctl --no-block start board-identify-cleanup.service"
-ACTION=="remove", SUBSYSTEM=="tty", KERNEL=="ttyACM*", TAG+="systemd", RUN+="/usr/bin/systemctl --no-block start board-identify-cleanup.service"
+# On removal the per-port unit is stopped by systemd through BindsTo=, which
+# runs its ExecStop=. The cleanup pass also catches links left behind by a unit
+# that never stopped cleanly.
+ACTION=="remove", SUBSYSTEM=="tty", KERNEL=="ttyUSB*", RUN+="/usr/bin/systemctl --no-block start board-identify-cleanup.service"
+ACTION=="remove", SUBSYSTEM=="tty", KERNEL=="ttyACM*", RUN+="/usr/bin/systemctl --no-block start board-identify-cleanup.service"

@@ -1,5 +1,7 @@
 # board-identify
 
+*[English](README.md) | [日本語](README.ja.md)*
+
 Identify microcontroller boards connected through serial devices and publish stable symlinks based on hardware identifiers.
 
 ## Initial scope
@@ -27,7 +29,8 @@ Run the checks:
 ```bash
 uv run pytest
 uv run ruff check .
-uv run mypy src
+uv run ruff format --check .
+uv run mypy src tests
 ```
 
 ## Manual use
@@ -41,6 +44,22 @@ Machine-readable output:
 ```bash
 sudo .venv/bin/board-identify identify --json /dev/ttyUSB0
 ```
+
+Identify without publishing anything, or publish somewhere other than `/run`:
+
+```bash
+sudo .venv/bin/board-identify identify --no-publish /dev/ttyUSB0
+sudo .venv/bin/board-identify --runtime-dir /tmp/board-identify identify /dev/ttyUSB0
+```
+
+Drop the link and state of one port, or sweep everything that has gone stale:
+
+```bash
+sudo .venv/bin/board-identify remove ttyUSB0
+sudo .venv/bin/board-identify cleanup
+```
+
+Exit codes: `0` success, `1` error, `2` the board could not be identified.
 
 ## OS integration
 
@@ -62,6 +81,8 @@ To uninstall:
 sudo ./scripts/uninstall.sh
 ```
 
+See [`docs/operations.md`](docs/operations.md) for details and troubleshooting.
+
 ## Identification policy
 
 1. Inspect the serial device and USB metadata.
@@ -80,3 +101,11 @@ sudo ./scripts/uninstall.sh
 - [ ] Generic firmware identification protocol
 
 See [`docs/adding-a-probe.md`](docs/adding-a-probe.md).
+
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Identifier format](docs/identifier-format.md)
+- [Operations](docs/operations.md)
+- [Adding a probe](docs/adding-a-probe.md)
+- [Changelog](CHANGELOG.md)
