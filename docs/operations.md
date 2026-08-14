@@ -18,7 +18,24 @@ On the main target environment, devices are forwarded from Windows with
 usbipd list                        # note the BUSID, for example 1-4
 usbipd bind --busid 1-4            # once, as administrator
 usbipd attach --wsl --busid 1-4
+usbipd attach --wsl --busid 1-4 --auto-attach   # keeps re-attaching, runs until stopped
 ```
+
+### Auto-attach or a fixed order
+
+Auto-attach forwards a device as soon as it appears and brings it back after a
+disconnect, but the order is whatever the devices happen to arrive in. For adapters
+without a serial number, such as most CH340 modules, the resulting `/dev/ttyUSB*` numbers
+are then unattributable. The two workable setups are:
+
+| Setup | Port numbers | Cost |
+| --- | --- | --- |
+| Manual attach, always in the same order | Predictable | A fixed ritual every session; a lost attachment must be noticed and redone by hand |
+| Auto-attach plus `board-identify` | Arbitrary, and irrelevant | The probe resets boards on every attach |
+
+Attachments are lost from time to time — a suspend, a Wi-Fi or VPN change on the Windows
+side, or a USB glitch. Auto-attach restores them without intervention, which is why it is
+usually kept on and the ordering problem is solved on the Linux side instead.
 
 Inside WSL the device then appears as `/dev/ttyUSB0` or `/dev/ttyACM0`:
 

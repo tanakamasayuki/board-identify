@@ -62,6 +62,23 @@ mechanisms break down:
 `board-identify` therefore asks the target board itself for an identifier that survives
 re-attach in any order.
 
+### The auto-attach trade-off
+
+`usbipd attach --auto-attach` is convenient — it forwards devices as they appear and
+re-attaches them after a disconnect — but it attaches in whatever order the devices show
+up. With adapters that report no serial number, such as most CH340 modules, there is then
+no way to tell which `/dev/ttyUSB*` is which. You have to pick one of two:
+
+- **Attach manually, always in the same order.** Port numbers become predictable, at the
+  cost of a fixed ritual every session.
+- **Use auto-attach together with a tool like this one**, which identifies the board
+  itself so the order stops mattering.
+
+USB/IP also drops attachments occasionally — a suspend, a Wi-Fi or VPN change on the
+Windows side, or a USB glitch is enough. Without auto-attach, recovering means noticing
+the loss and re-running the attach command by hand, which is the main reason to keep
+auto-attach on and solve the ordering problem here instead.
+
 ## Requirements
 
 Install [uv](https://docs.astral.sh/uv/) before setting up the project.

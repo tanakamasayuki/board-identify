@@ -17,3 +17,5 @@
 - Document the WSL + USB/IP target environment, where the Windows bus ID is invisible to
   Linux and `by-path` follows the attach order.
 - State that probing resets the board and that this is a development-environment tool.
+- Document the USB/IP auto-attach trade-off: arbitrary attach order versus a fixed manual
+  ritual, and the occasional lost attachment that auto-attach recovers from.
