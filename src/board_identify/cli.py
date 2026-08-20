@@ -7,7 +7,7 @@ from pathlib import Path
 
 from board_identify import __version__
 from board_identify.cleanup import cleanup
-from board_identify.identify import identify_port, publish, remove_port
+from board_identify.identify import default_probes, identify_port, publish, remove_port
 from board_identify.paths import RUNTIME_DIR
 
 EXIT_OK = 0
@@ -33,6 +33,11 @@ def build_parser() -> argparse.ArgumentParser:
     identify_parser.add_argument("port", type=Path)
     identify_parser.add_argument("--json", action="store_true", dest="as_json")
     identify_parser.add_argument("--no-publish", action="store_true")
+    identify_parser.add_argument(
+        "--no-target-probe",
+        action="store_true",
+        help="stay on USB descriptors instead of talking to the board behind a debug probe",
+    )
 
     remove_parser = subparsers.add_parser("remove", help="drop the link and state of one port")
     remove_parser.add_argument("port_name", help="kernel port name, for example ttyUSB0")
@@ -65,23 +70,38 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _identify(args: argparse.Namespace, runtime_dir: Path) -> int:
+    probes = default_probes(probe_target=not args.no_target_probe)
     try:
-        result = identify_port(args.port)
+        results = identify_port(args.port, probes=probes)
     except FileNotFoundError:
         print(f"device does not exist: {args.port}", file=sys.stderr)
         return EXIT_ERROR
 
-    if result is None:
+    if not results:
         print(f"unable to identify: {args.port}", file=sys.stderr)
         return EXIT_UNIDENTIFIED
 
-    link = None if args.no_publish else publish(result, runtime_dir=runtime_dir)
+    links = [] if args.no_publish else publish(results, runtime_dir=runtime_dir)
+    by_board_id = {link.name: link for link in links}
+
     if args.as_json:
-        output: dict[str, object] = dict(result.to_dict())
-        output["link"] = str(link) if link else None
+        output: dict[str, object] = {
+            "port": str(args.port),
+            "identifications": [
+                {**result.to_dict(), "link": _link_for(result.board_id, by_board_id)}
+                for result in results
+            ],
+        }
         print(json.dumps(output, indent=2, sort_keys=True))
-    elif link:
-        print(f"{link} -> {result.port}")
+    elif links:
+        for link in links:
+            print(f"{link} -> {link.readlink()}")
     else:
-        print(result.board_id)
+        for result in results:
+            print(result.board_id)
     return EXIT_OK
+
+
+def _link_for(board_id: str, links: dict[str, Path]) -> str | None:
+    link = links.get(board_id)
+    return str(link) if link is not None else None

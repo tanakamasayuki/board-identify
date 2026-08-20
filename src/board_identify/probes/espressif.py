@@ -63,7 +63,7 @@ class EspressifProbe:
         # this is a cheap pre-filter rather than a positive match.
         return port.name.startswith(("ttyUSB", "ttyACM"))
 
-    def identify(self, port: Path) -> Identification | None:
+    def identify(self, port: Path) -> list[Identification]:
         try:
             completed = subprocess.run(
                 [
@@ -85,12 +85,13 @@ class EspressifProbe:
                 env=esptool_environment(),
             )
         except (subprocess.TimeoutExpired, OSError):
-            return None
+            return []
 
         if completed.returncode != 0:
-            return None
+            return []
 
-        return self.parse(port, completed.stdout + completed.stderr)
+        result = self.parse(port, completed.stdout + completed.stderr)
+        return [] if result is None else [result]
 
     @classmethod
     def parse(cls, port: Path, output: str) -> Identification | None:

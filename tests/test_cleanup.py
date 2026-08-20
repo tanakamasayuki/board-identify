@@ -16,14 +16,40 @@ def make_port(tmp_path: Path, name: str) -> Path:
 
 
 def publish_port(runtime_dir: Path, port: Path, unique_id: str = "7cdfa1123456") -> Path:
+    (link,) = publish(
+        [
+            Identification(
+                port=port,
+                family="espressif",
+                variant="esp32-s3",
+                unique_id=unique_id,
+                id_source="target-mac",
+            )
+        ],
+        runtime_dir=runtime_dir,
+    )
+    return link
+
+
+def publish_probe_and_target(runtime_dir: Path, port: Path) -> list[Path]:
+    """Publish a debug probe together with the board behind it."""
     return publish(
-        Identification(
-            port=port,
-            family="espressif",
-            variant="esp32-s3",
-            unique_id=unique_id,
-            id_source="target-mac",
-        ),
+        [
+            Identification(
+                port=port,
+                family="wch",
+                variant="ch32x035c8t6",
+                unique_id="1ff9abcd880ebc48",
+                id_source="target-cpu-id",
+            ),
+            Identification(
+                port=port,
+                family="wch-link",
+                variant="wch-link",
+                unique_id="fc928f068181",
+                id_source="transport-serial",
+            ),
+        ],
         runtime_dir=runtime_dir,
     )
 
@@ -102,3 +128,40 @@ def test_non_symlink_entries_are_left_alone(tmp_path: Path) -> None:
 
     assert cleanup(runtime_dir=runtime) == []
     assert stray.exists()
+
+
+def test_disconnected_port_removes_all_of_its_links(tmp_path: Path) -> None:
+    runtime = tmp_path / "run"
+    port = make_port(tmp_path, "ttyACM4")
+    links = publish_probe_and_target(runtime, port)
+    port.unlink()
+
+    removed = cleanup(runtime_dir=runtime)
+
+    assert set(removed) == {*links, runtime / "state" / "ttyACM4.json"}
+    assert not any(link.is_symlink() for link in links)
+
+
+def test_live_port_keeps_the_links_it_still_owns(tmp_path: Path) -> None:
+    runtime = tmp_path / "run"
+    first = make_port(tmp_path, "ttyACM4")
+    second = make_port(tmp_path, "ttyACM5")
+    target, probe = publish_probe_and_target(runtime, first)
+    # The board moves to a second probe, which takes the target link over.
+    publish(
+        [
+            Identification(
+                port=second,
+                family="wch",
+                variant="ch32x035c8t6",
+                unique_id="1ff9abcd880ebc48",
+                id_source="target-cpu-id",
+            )
+        ],
+        runtime_dir=runtime,
+    )
+
+    assert cleanup(runtime_dir=runtime) == []
+    # The first probe is still plugged in, so its own link must survive.
+    assert probe.is_symlink()
+    assert target.readlink() == second

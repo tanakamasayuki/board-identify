@@ -9,6 +9,7 @@ ExecStart=/opt/board-identify/.venv/bin/board-identify identify /dev/%I
 # The leading dash keeps the unit out of the failed state when nothing was published.
 ExecStop=-/opt/board-identify/.venv/bin/board-identify remove %I
 RemainAfterExit=yes
-# The probe resets the target and may retry the connection, so allow more than
-# the probe timeout in board_identify.probes.espressif.
+# A probe may reset the target and retry the connection, so allow more than the
+# probe timeout in board_identify.probes.espressif. A debug probe answers in a
+# fraction of a second and never approaches this.
 TimeoutStartSec=60

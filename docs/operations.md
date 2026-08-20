@@ -4,9 +4,10 @@
 
 ## Before installing
 
-Probing resets the target: every plug event restarts the firmware on the board. Install
-this on a development machine only, and prefer `/dev/serial/by-id/` or a udev rule
-matching USB descriptors wherever those work. See the README section
+Probing disturbs the target: `esptool` restarts the firmware on every plug event, and a
+WCH-Link attach halts the target's core and releases it again. Install this on a
+development machine only, and prefer `/dev/serial/by-id/` or a udev rule matching USB
+descriptors wherever those work. See the README section
 [Use the standard mechanisms first](../README.md#use-the-standard-mechanisms-first).
 
 ## WSL and USB/IP
@@ -31,7 +32,7 @@ are then unattributable. The two workable setups are:
 | Setup | Port numbers | Cost |
 | --- | --- | --- |
 | Manual attach, always in the same order | Predictable | A fixed ritual every session; a lost attachment must be noticed and redone by hand |
-| Auto-attach plus `board-identify` | Arbitrary, and irrelevant | The probe resets boards on every attach |
+| Auto-attach plus `board-identify` | Arbitrary, and irrelevant | The probe disturbs boards on every attach |
 
 Attachments are lost from time to time — a suspend, a Wi-Fi or VPN change on the Windows
 side, or a USB glitch. Auto-attach restores them without intervention, which is why it is
@@ -84,7 +85,28 @@ Set `BOARD_IDENTIFY_INSTALL_ROOT` to install elsewhere. Uninstall with
 
 `TimeoutStartSec=60` in the unit must stay above the probe timeout in
 `board_identify.probes.espressif` (30 s by default), otherwise a slow probe is killed
-before it can answer.
+before it can answer. A WCH-Link is recognised from its descriptors and answers in well
+under a second, so it never comes close.
+
+## USB permissions for debug probes
+
+Identifying the board behind a debug probe needs access to the probe's vendor USB
+interface, not just to the tty. The systemd unit runs as root, so the installed setup
+needs nothing extra. Running `board-identify identify` by hand as an ordinary user does,
+and without it the probe itself is still named but its target is not:
+
+```bash
+# Whether the interface is reachable: if only the wch-link entry comes back, the
+# vendor interface could not be opened.
+board-identify identify --json --no-publish /dev/ttyACM4
+
+# A rule granting access to a WCH-Link in RISC-V mode.
+sudo tee /etc/udev/rules.d/99-wch-link.rules <<'RULE'
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="8010", GROUP="plugdev", MODE="0660"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="8012", GROUP="plugdev", MODE="0660"
+RULE
+sudo udevadm control --reload
+```
 
 ## Troubleshooting
 
@@ -102,13 +124,23 @@ sudo /opt/board-identify/.venv/bin/board-identify identify --json --no-publish /
 sudo /opt/board-identify/.venv/bin/board-identify cleanup
 ```
 
+A debug probe whose vendor interface is already claimed — by a running `gdb`,
+`minichlink`, `wlink`, or OpenOCD session — cannot be asked about its target. That is not
+an error: the probe itself is still published from its descriptors, and the target link
+reappears on the next plug event or on a manual re-run once the session ends. To publish
+the probe alone on purpose, or to leave a running target strictly alone:
+
+```bash
+sudo /opt/board-identify/.venv/bin/board-identify identify --no-target-probe /dev/ttyACM4
+```
+
 If identification fails with exit code 2, the port answered nothing that a probe
 recognised. Common causes: the board is running an application that holds the port, the
 board needs manual bootloader entry, or another process (a serial monitor, ModemManager)
 opened the port first. Excluding your boards from ModemManager with a udev rule such as
 `ENV{ID_MM_DEVICE_IGNORE}="1"` avoids the last case.
 
-Probing resets the target. Do not install this on a machine where boards are expected to
-keep running undisturbed while being plugged in.
+Probing disturbs the target. Do not install this on a machine where boards are expected
+to keep running undisturbed while being plugged in.
 
 See also [Architecture](architecture.md).

@@ -6,13 +6,18 @@ Identify microcontroller boards connected through serial devices and publish sta
 
 ## Initial scope
 
-The starter implementation identifies Espressif devices through `esptool` and creates links such as:
+Espressif devices are identified through `esptool`, and WCH-Link debug probes are
+identified along with whatever board is on their debug pins:
 
 ```text
-/run/board-identify/by-id/esp32-s3-7cdfa1123456 -> /dev/ttyUSB2
+/run/board-identify/by-id/esp32-s3-7cdfa1123456         -> /dev/ttyUSB2
+/run/board-identify/by-id/ch32x035c8t6-1ff9abcd880ebc48 -> /dev/ttyACM4
+/run/board-identify/by-id/wch-link-fc928f068181         -> /dev/ttyACM4
 ```
 
-The USB transport and the target board are treated separately. A CH340, FTDI, or CP210x serial number identifies the adapter, not necessarily the board behind it.
+The USB transport and the target board are treated separately. A CH340, FTDI, or CP210x
+serial number identifies the adapter, not necessarily the board behind it. A debug probe
+is both at once, so it gets a link of its own next to the one for its target.
 
 ## Use the standard mechanisms first
 
@@ -43,6 +48,13 @@ fixed physical ports through `by-path`.
 
 Reach for `board-identify` only when neither applies, for example a CH340 that reports no
 serial number at all, several identical adapters, or the WSL + USB/IP case below.
+
+A debug probe is a case of its own: `by-id` names the probe, which is often not what you
+mean. The UART on a WCH-LinkE already appears as
+`/dev/serial/by-id/usb-wch.cn_WCH-Link_FC928F068181-if01`, but that name follows the
+probe, not the board. Swap the board on its debug pins and the name does not change. If
+you want a name that follows the board instead, that is what the WCH-Link probe below is
+for.
 
 ## Target environment: Linux on WSL over USB/IP
 
@@ -78,6 +90,39 @@ USB/IP also drops attachments occasionally — a suspend, a Wi-Fi or VPN change 
 Windows side, or a USB glitch is enough. Without auto-attach, recovering means noticing
 the loss and re-running the attach command by hand, which is the main reason to keep
 auto-attach on and solve the ordering problem here instead.
+
+## Debug probes
+
+A WCH-Link is identified in two steps, and each step produces its own link.
+
+```bash
+sudo .venv/bin/board-identify identify /dev/ttyACM4
+# /run/board-identify/by-id/ch32x035c8t6-1ff9abcd880ebc48 -> /dev/ttyACM4
+# /run/board-identify/by-id/wch-link-fc928f068181         -> /dev/ttyACM4
+```
+
+- **The probe itself**, from USB descriptors in sysfs. No USB traffic, the tty is never
+  opened, and nothing can be disturbed.
+- **The board on its debug pins**, from the chip signature and the UUID programmed into
+  it at the factory. This needs a short conversation on the probe's vendor interface,
+  which holds the target's core for the duration and releases it again.
+
+Only the second step touches the target, and `--no-target-probe` turns it off:
+
+```bash
+sudo .venv/bin/board-identify identify --no-target-probe /dev/ttyACM4
+# /run/board-identify/by-id/wch-link-fc928f068181 -> /dev/ttyACM4
+```
+
+The target link is named as specifically as the chip can be pinned down —
+`ch32x035c8t6` rather than `ch32x035` when the signature is one this tool has a part
+number for. Chip signatures are transcribed from
+[probe-rs](https://github.com/probe-rs/probe-rs) and
+[ch32fun](https://github.com/cnlohr/ch32fun); a signature neither of them lists falls
+back to the series, and then to raw hex.
+
+RISC-V mode (`1a86:8010`, `1a86:8012`) is what the target step needs. In ARM mode
+(`1a86:8011`) the probe speaks CMSIS-DAP instead, so only the probe itself is named.
 
 ## Requirements
 
@@ -124,6 +169,12 @@ sudo .venv/bin/board-identify remove ttyUSB0
 sudo .venv/bin/board-identify cleanup
 ```
 
+Skip the step that talks to a board behind a debug probe:
+
+```bash
+sudo .venv/bin/board-identify identify --no-target-probe /dev/ttyACM4
+```
+
 Exit codes: `0` success, `1` error, `2` the board could not be identified.
 
 ## OS integration
@@ -152,20 +203,23 @@ See [`docs/operations.md`](docs/operations.md) for details and troubleshooting.
 
 1. Inspect the serial device and USB metadata.
 2. Run target-specific probes when needed.
-3. Generate `<variant>-<unique-id>`.
-4. Atomically publish a symlink under `/run/board-identify/by-id/`.
+3. Generate `<variant>-<unique-id>` for every identity the port has.
+4. Atomically publish one symlink each under `/run/board-identify/by-id/`.
 5. Store current state under `/run/board-identify/state/`.
 
 ## Scope: development environments only
 
 Anything that cannot be pinned down by USB VID/PID is identified by talking to the
-target, and that probe **resets the board**: `esptool` drives DTR/RTS to enter the
-bootloader, so the running firmware is restarted every time the port appears.
+target, and that **disturbs the board**. `esptool` drives DTR/RTS to enter the
+bootloader, so the running firmware is restarted every time the port appears. A WCH-Link
+attach holds the target's core and releases it again, which interrupts what it was doing
+rather than restarting it.
 
 Consequences to accept before installing this:
 
 - A board plugged into this machine will reboot, including boards that are not the one
-  you care about, because the probe runs on every `ttyUSB*` and `ttyACM*` port.
+  you care about, because the probe runs on every `ttyUSB*` and `ttyACM*` port that is
+  not recognised from its descriptors.
 - A device that is mid-measurement, logging, or driving hardware will be interrupted.
 - Serial output produced during the probe window is lost.
 
@@ -173,13 +227,15 @@ Use it on a development machine. Do not use it where an environment has to stay 
 production, unattended test rigs, or anything driving hardware that must not restart.
 There, pin the devices with `/dev/serial/by-id/` or a udev rule as shown above.
 
-Current status: the VID/PID fast path is not implemented yet, so **every** supported port
-is probed today, including devices that could have been identified from their descriptors
-alone. See [Planned probes](#planned-probes).
+Current status: a WCH-Link is recognised from its descriptors, which ends the probe chain
+before `esptool` runs, but there is no general VID/PID fast path yet. Every other
+supported port is still probed by talking to it, including devices that could have been
+identified from their descriptors alone. See [Planned probes](#planned-probes).
 
 ## Planned probes
 
 - [x] Espressif ESP32 family via eFuse MAC
+- [x] WCH-Link debug probes, and WCH RISC-V targets behind them via the part UUID
 - [ ] Native USB serial descriptors
 - [ ] Arduino boards
 - [ ] RP2040

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from board_identify.identify import link_points_to, read_state
+from board_identify.identify import link_points_to, read_state, state_board_ids
 from board_identify.paths import RUNTIME_DIR, by_id_dir, state_dir
 
 __all__ = ["cleanup"]
@@ -21,30 +21,32 @@ def cleanup(runtime_dir: Path = RUNTIME_DIR) -> list[Path]:
     if states.is_dir():
         for state_path in sorted(states.glob("*.json")):
             state = read_state(state_path.stem, runtime_dir)
-            if state is None:
+            board_ids = state_board_ids(state) if state is not None else []
+            port = state.get("port") if state is not None else None
+
+            if not board_ids or not isinstance(port, str):
                 state_path.unlink(missing_ok=True)
                 removed.append(state_path)
                 continue
 
-            board_id = state.get("board_id")
-            port = state.get("port")
-            if not isinstance(board_id, str) or not isinstance(port, str):
+            owned = [
+                board_id for board_id in board_ids if link_points_to(links / board_id, Path(port))
+            ]
+
+            if not Path(port).exists():
+                for board_id in owned:
+                    (links / board_id).unlink(missing_ok=True)
+                    removed.append(links / board_id)
                 state_path.unlink(missing_ok=True)
                 removed.append(state_path)
                 continue
 
-            link = links / board_id
-            owns_link = link_points_to(link, Path(port))
-
-            if Path(port).exists() and owns_link:
-                continue
-
-            # The port is gone, or the link now belongs to another port.
-            if owns_link:
-                link.unlink(missing_ok=True)
-                removed.append(link)
-            state_path.unlink(missing_ok=True)
-            removed.append(state_path)
+            # The port is live. Its remaining links are still correct, so only a
+            # record that owns nothing at all is stale: every name it claimed has
+            # been taken over by another port.
+            if not owned:
+                state_path.unlink(missing_ok=True)
+                removed.append(state_path)
 
     # Sweep dangling links, for instance ones whose state file was lost.
     if links.is_dir():

@@ -81,20 +81,20 @@ def test_environment_disables_colour_and_wrapping() -> None:
     assert int(env["COLUMNS"]) >= 200
 
 
-def test_identify_returns_none_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_identify_returns_nothing_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(args=[], returncode=2, stdout="", stderr="boom")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    assert EspressifProbe().identify(Path("/dev/ttyUSB0")) is None
+    assert EspressifProbe().identify(Path("/dev/ttyUSB0")) == []
 
 
-def test_identify_returns_none_on_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_identify_returns_nothing_on_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         raise subprocess.TimeoutExpired(cmd="esptool", timeout=1)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    assert EspressifProbe().identify(Path("/dev/ttyUSB0")) is None
+    assert EspressifProbe().identify(Path("/dev/ttyUSB0")) == []
 
 
 def test_identify_parses_successful_run(
@@ -106,6 +106,5 @@ def test_identify_parses_successful_run(
         )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    result = EspressifProbe().identify(Path("/dev/ttyACM0"))
-    assert result is not None
-    assert result.board_id == "esp32-s3-7cdfa1123456"
+    results = EspressifProbe().identify(Path("/dev/ttyACM0"))
+    assert [result.board_id for result in results] == ["esp32-s3-7cdfa1123456"]

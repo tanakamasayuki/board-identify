@@ -4,7 +4,7 @@
 
 ## インストール前に
 
-プローブはターゲットをリセットします。接続イベントのたびにボードのファームウェアが再起動します。導入は開発マシンに限定し、使える場面では `/dev/serial/by-id/` や USB ディスクリプタを照合する udev ルールを優先してください。README の [まず標準の仕組みを検討してください](../README.ja.md#まず標準の仕組みを検討してください) を参照。
+プローブはターゲットを乱します。`esptool` は接続イベントのたびにファームウェアを再起動させ、WCH-Link の attach はターゲットのコアを halt して解放します。導入は開発マシンに限定し、使える場面では `/dev/serial/by-id/` や USB ディスクリプタを照合する udev ルールを優先してください。README の [まず標準の仕組みを検討してください](../README.ja.md#まず標準の仕組みを検討してください) を参照。
 
 ## WSL と USB/IP
 
@@ -24,7 +24,7 @@ usbipd attach --wsl --busid 1-4 --auto-attach   # 再接続し続ける。停止
 | 構成 | ポート番号 | 代償 |
 | --- | --- | --- |
 | 毎回同じ順序で手動 attach | 予測可能 | セッションごとの決まった手順。attach が外れたら気づいて手で復旧する必要がある |
-| オートアタッチ + `board-identify` | 不定だが問題にならない | attach のたびにプローブがボードをリセットする |
+| オートアタッチ + `board-identify` | 不定だが問題にならない | attach のたびにプローブがボードを乱す |
 
 attach は時折外れます。サスペンド、Windows 側の Wi-Fi や VPN の切り替え、USB の一時的な不調などが原因です。オートアタッチなら手を介さずに復帰するため、通常はこれを有効にしたまま、順序の問題は Linux 側で解決します。
 
@@ -64,7 +64,24 @@ sudo UV_BIN="$(command -v uv)" ./scripts/install.sh
 - 接続: udev が `SYSTEMD_WANTS` を設定し、systemd が `board-identify@ttyUSB0.service` を起動して `board-identify identify /dev/ttyUSB0` を実行します。
 - 切断: `BindsTo=dev-ttyUSB0.device` によりユニットが停止し、その `ExecStop=` が `board-identify remove ttyUSB0` を実行します。加えて udev の `remove` ルールが `board-identify-cleanup.service` を起動します。
 
-ユニットの `TimeoutStartSec=60` は、`board_identify.probes.espressif` のプローブタイムアウト（既定 30 秒）より大きい値を保ってください。小さいと、応答が遅いプローブが結果を返す前に強制終了されます。
+ユニットの `TimeoutStartSec=60` は、`board_identify.probes.espressif` のプローブタイムアウト（既定 30 秒）より大きい値を保ってください。小さいと、応答が遅いプローブが結果を返す前に強制終了されます。WCH-Link はディスクリプタから認識され 1 秒を大きく下回って応答するので、この上限に近づくことはありません。
+
+## デバッグプローブの USB 権限
+
+デバッグプローブの先のボードを識別するには、tty だけでなくプローブのベンダ USB インタフェースへのアクセスが必要です。systemd ユニットは root で動くため、インストール済みの構成では追加設定は要りません。一般ユーザーで手動実行する場合は必要で、権限がないとプローブ自身には名前が付きますが、その先のターゲットには付きません。
+
+```bash
+# 到達できているかの確認。wch-link のエントリだけが返るなら、
+# ベンダインタフェースを開けていない。
+board-identify identify --json --no-publish /dev/ttyACM4
+
+# RISC-V モードの WCH-Link へのアクセスを許可するルール。
+sudo tee /etc/udev/rules.d/99-wch-link.rules <<'RULE'
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="8010", GROUP="plugdev", MODE="0660"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="8012", GROUP="plugdev", MODE="0660"
+RULE
+sudo udevadm control --reload
+```
 
 ## トラブルシューティング
 
@@ -82,8 +99,14 @@ sudo /opt/board-identify/.venv/bin/board-identify identify --json --no-publish /
 sudo /opt/board-identify/.venv/bin/board-identify cleanup
 ```
 
+ベンダインタフェースを既に別のセッション（`gdb`、`minichlink`、`wlink`、OpenOCD など）が掴んでいるデバッグプローブには、ターゲットについて尋ねられません。これはエラーではありません。プローブ自身はディスクリプタから公開され、ターゲットのリンクはそのセッションが終わったあとの次の接続イベントか手動再実行で復活します。意図的にプローブだけを公開したい場合、あるいは動作中のターゲットに一切触れたくない場合は次のようにします。
+
+```bash
+sudo /opt/board-identify/.venv/bin/board-identify identify --no-target-probe /dev/ttyACM4
+```
+
 終了コード 2 で識別に失敗する場合、どのプローブも認識できる応答が得られなかったことを意味します。よくある原因は、ボード上のアプリケーションがポートを占有している、ブートローダへの手動遷移が必要、シリアルモニタや ModemManager などの別プロセスが先にポートを開いた、などです。最後の例は `ENV{ID_MM_DEVICE_IGNORE}="1"` のような udev ルールで ModemManager の対象から外すと回避できます。
 
-プローブはターゲットをリセットします。接続中もボードを止めずに動かし続けたい環境には導入しないでください。
+プローブはターゲットを乱します。接続中もボードを止めずに動かし続けたい環境には導入しないでください。
 
 [アーキテクチャ](architecture.ja.md) も参照してください。
