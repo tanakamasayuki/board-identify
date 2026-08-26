@@ -107,6 +107,12 @@ sudo .venv/bin/board-identify identify /dev/ttyACM4
   it at the factory. This needs a short conversation on the probe's vendor interface,
   which holds the target's core for the duration and releases it again.
 
+Some tools leave the probe holding a broken readback of its target, so that the chip ID
+and the UUID come back as a repeating pattern that is the same for every board in that
+state. When a signature resolves to no chip at all, the probe is told to look again and
+the target is read once more, without resetting it; see
+[A debug probe that reports the wrong chip](docs/operations.md#a-debug-probe-that-reports-the-wrong-chip).
+
 Only the second step touches the target, and `--no-target-probe` turns it off:
 
 ```bash

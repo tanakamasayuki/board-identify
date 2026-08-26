@@ -20,7 +20,7 @@ import usb.util
 
 from board_identify.model import Identification
 from board_identify.normalize import normalize_component, normalize_unique_id
-from board_identify.probes.wch_chips import chip_name
+from board_identify.probes.wch_chips import chip_name, resolve_chip
 from board_identify.usbinfo import SYSFS_ROOT, UsbDevice, usb_device_for_port
 
 VENDOR_ID = 0x1A86
@@ -43,6 +43,11 @@ PROBE_INFO = b"\x81\x0d\x01\x01"
 SET_SPEED = b"\x81\x0c\x02\x01\x02"
 ATTACH_CHIP = b"\x81\x0d\x01\x02"
 CHIP_INFO = b"\x81\x11\x01\x05"
+# Makes the probe re-establish what it is attached to, which is what clears the
+# corrupted readback described in recover_if_corrupted(). Unlike `wlink reset`
+# (`81 0b 01 01`) it does not reset the target: measured through the debug
+# module's sticky havereset bits, this leaves them clear.
+REDETECT_CHIP = b"\x81\x0d\x01\x03"
 
 # Replies to the 0x0d command group carry this header.
 REPLY_HEADER = (0x82, 0x0D)
@@ -164,16 +169,49 @@ class WchLinkProbe:
 
         target = None
         try:
-            self.command(handle, SET_SPEED)
-            signature = self.parse_attach(self.command(handle, ATTACH_CHIP))
+            signature, target = self.read_target(handle)
             if signature is not None:
-                target = self.parse_chip_info(self.command(handle, CHIP_INFO), signature)
+                target = self.recover_if_corrupted(handle, signature, target)
         finally:
             # Attaching holds the target core; this releases it again. It runs
             # even on failure so a half finished probe does not leave it halted.
             with contextlib.suppress(usb.core.USBError):
                 self.command(handle, CLEAR_STATE)
         return probe_info, target
+
+    def read_target(self, handle: Any) -> tuple[ChipSignature | None, TargetInfo | None]:
+        """Attach and read the target's signature and UUID."""
+        self.command(handle, SET_SPEED)
+        signature = self.parse_attach(self.command(handle, ATTACH_CHIP))
+        if signature is None:
+            return None, None
+        return signature, self.parse_chip_info(self.command(handle, CHIP_INFO), signature)
+
+    def recover_if_corrupted(
+        self, handle: Any, signature: ChipSignature, target: TargetInfo | None
+    ) -> TargetInfo | None:
+        """Make the probe look again when the first reading looks corrupted.
+
+        Some tools leave the *probe* holding a broken readback of its target: the
+        family byte stays right, but the chip ID and the UUID come back as one
+        repeating word, and stay that way across further attach cycles. It is the
+        probe and not the board that is confused — power cycling the target does
+        not clear it. Publishing the reading would be worse than publishing
+        nothing, because the bogus UUID is the same for every board in this
+        state, so a signature that resolves to no chip at all is read again.
+        """
+        if target is not None and resolve_chip(signature.family_id, signature.chip_id):
+            return target
+
+        self.command(handle, REDETECT_CHIP)
+        self.command(handle, CLEAR_STATE)
+        retried_signature, retried = self.read_target(handle)
+        if retried is None or retried_signature is None:
+            return target
+        # Only prefer the retry when it actually resolved something.
+        if resolve_chip(retried_signature.family_id, retried_signature.chip_id):
+            return retried
+        return target if target is not None else retried
 
     def command(self, handle: Any, payload: bytes) -> bytes:
         """Send one command and return its reply."""
@@ -215,6 +253,10 @@ class WchLinkProbe:
         uuid = reply[4 : 4 + UUID_LENGTH]
         # A part that did not answer, or refused to, returns a constant.
         if uuid in (bytes(UUID_LENGTH), b"\xff" * UUID_LENGTH):
+            return None
+        # A corrupted readback fills the whole reply with one repeating word,
+        # which a factory UUID never looks like.
+        if len(set(reply[index : index + 4] for index in range(0, len(reply), 4))) == 1:
             return None
 
         return TargetInfo(

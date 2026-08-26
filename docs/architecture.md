@@ -86,6 +86,18 @@ identified in two steps.
    which names the board. `--no-target-probe` skips this step entirely, leaving the run
    with no USB traffic at all.
 
+A third step runs only when it has to. Some tools leave the *probe* holding a broken
+readback of its target: the family byte stays correct, but the chip ID and the UUID come
+back as one four-byte word repeated, and stay that way across further attach cycles.
+Detaching does not clear it, and neither does power cycling the target — it is the probe
+that is confused, not the board. Publishing that reading would be worse than publishing
+nothing, because the bogus UUID is identical for every board in that state, so when a
+signature resolves to no chip at all the probe is told to look again with `81 0d 01 03`
+and the target is read once more. `wlink reset` also clears it, but only as a side effect
+of forcing the re-read: measured through the debug module's sticky `havereset` bits,
+`81 0b 01 01` resets the target and `81 0d 01 03` does not. Recovery uses the one that
+does not, so identification still never resets a WCH target.
+
 The probe's own link is named from descriptors alone on purpose. The model letter a
 WCH-Link reports over its vendor interface would be a nicer name, but it is unavailable
 whenever a debug session already holds that interface, and a name that depends on who

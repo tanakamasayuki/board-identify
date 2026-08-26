@@ -16,7 +16,7 @@ Masks are tried most specific first, so a narrow table always wins over a wide
 one.
 """
 
-__all__ = ["CHIP_ID_NAMES", "SERIES_NAMES", "chip_name"]
+__all__ = ["CHIP_ID_NAMES", "SERIES_NAMES", "chip_name", "resolve_chip"]
 
 # (mask, {chip_id & mask: part number})
 CHIP_ID_NAMES: tuple[tuple[int, dict[int, str]], ...] = (
@@ -166,11 +166,13 @@ SERIES_NAMES: dict[tuple[int, int], str] = {
 }
 
 
-def chip_name(family_id: int, chip_id: int) -> str:
+def resolve_chip(family_id: int, chip_id: int) -> str | None:
     """Name a target from its attach signature, as specifically as the tables allow.
 
-    Falls back from an orderable part number to a series, and finally to the raw
-    signature in hex so that an unlisted chip still gets a stable name.
+    Returns an orderable part number, or the series when only that is listed, or
+    None when neither table recognises the signature. A None is worth acting on:
+    a signature that resolves nowhere is as likely to be a corrupted readback as
+    a chip newer than these tables.
     """
     for mask, names in CHIP_ID_NAMES:
         part_number = names.get(chip_id & mask)
@@ -178,8 +180,13 @@ def chip_name(family_id: int, chip_id: int) -> str:
             return part_number
 
     model_id = (chip_id >> 16) & 0xFFF0
-    series = SERIES_NAMES.get((family_id, model_id))
-    if series is not None:
-        return series
+    return SERIES_NAMES.get((family_id, model_id))
 
-    return f"WCH {family_id:02x}-{chip_id:08x}"
+
+def chip_name(family_id: int, chip_id: int) -> str:
+    """Like :func:`resolve_chip`, falling back to the raw signature in hex.
+
+    The fallback keeps an unlisted chip nameable, and stable, rather than
+    unpublishable.
+    """
+    return resolve_chip(family_id, chip_id) or f"WCH {family_id:02x}-{chip_id:08x}"

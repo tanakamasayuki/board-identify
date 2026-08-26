@@ -35,4 +35,11 @@
   traffic at all.
 - Add `usbinfo`, which reads a port's USB metadata from sysfs without opening it.
 - Report `identify --json` as a list of identifications under a single `port`.
+- Recover from a WCH-Link left holding a corrupted readback of its target, where the
+  family byte stays correct but the chip ID and UUID come back as one repeating word.
+  Reject the repeating reply, and make the probe look again when a signature resolves to
+  no chip at all. Reproduced with probe-rs 0.32 on a CH32V003, from a read alone; the
+  state survives detaching and power cycling the target, because it is the probe that is
+  confused. Recovery uses `81 0d 01 03`, which clears it without resetting the target,
+  rather than `wlink reset`, which clears it by resetting.
 - Add `pyusb` as a dependency.

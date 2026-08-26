@@ -124,6 +124,40 @@ sudo /opt/board-identify/.venv/bin/board-identify identify --json --no-publish /
 sudo /opt/board-identify/.venv/bin/board-identify cleanup
 ```
 
+### A debug probe that reports the wrong chip
+
+Some tools leave the WCH-Link's readback of its target broken. Observed with probe-rs
+0.32 on a CH32V003, from a plain `probe-rs read` — no flashing needed:
+
+```text
+attach     82 0d 05 09 00 00 03 07          family 0x09 correct, chip ID garbage
+chip info  00 00 03 07 ... (repeated x5)    UUID reads as 0000030700000307
+```
+
+The family byte stays right, which is what makes the reading look plausible. The rest is
+one four-byte word repeated, it survives further attach and detach cycles, and the same
+bogus UUID comes back for every board in this state. It is the probe that is confused,
+not the board: power cycling the target does not clear it. `board-identify` detects it
+and reads again, so nothing extra is needed.
+
+What clears it, and what that costs:
+
+| Command | Clears it | Resets the target |
+| --- | --- | --- |
+| `81 0d 01 03` — what recovery uses | Yes | No |
+| `81 0b 01 01` — `wlink reset`, probe-rs `ResetTarget` | Yes | Yes |
+| `81 0d 01 ff` — detach | No | No |
+| `81 0d 01 13` — reset line low | No | No |
+| Power cycling the target | No | — |
+
+Measured through the debug module's sticky `havereset` bits. To clear it by hand, the
+reachable option is a reset, which is fine at plug time:
+
+```bash
+wlink reset
+probe-rs reset --probe 1a86:8010:<serial> --chip <chip>
+```
+
 A debug probe whose vendor interface is already claimed — by a running `gdb`,
 `minichlink`, `wlink`, or OpenOCD session — cannot be asked about its target. That is not
 an error: the probe itself is still published from its descriptors, and the target link
