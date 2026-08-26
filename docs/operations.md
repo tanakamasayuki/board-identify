@@ -127,7 +127,9 @@ sudo /opt/board-identify/.venv/bin/board-identify cleanup
 ### A debug probe that reports the wrong chip
 
 Some tools leave the WCH-Link's readback of its target broken. Observed with probe-rs
-0.32 on a CH32V003, from a plain `probe-rs read` — no flashing needed:
+0.32 on a CH32V003 over its single-wire SWIO connection, from a plain `probe-rs read` — no
+flashing needed. A CH32V103 driven the same way is unaffected, so this looks specific to
+the single-wire path:
 
 ```text
 attach     82 0d 05 09 00 00 03 07          family 0x09 correct, chip ID garbage
@@ -148,14 +150,19 @@ What clears it, and what that costs:
 | `81 0b 01 01` — `wlink reset`, probe-rs `ResetTarget` | Yes | Yes |
 | `81 0d 01 ff` — detach | No | No |
 | `81 0d 01 13` — reset line low | No | No |
+| A debug-module `ndmreset` | No | Yes |
+| `probe-rs reset` | No | Yes |
 | Power cycling the target | No | — |
 
-Measured through the debug module's sticky `havereset` bits. To clear it by hand, the
-reachable option is a reset, which is fine at plug time:
+Measured through the debug module's sticky `havereset` bits. Note that resetting the
+target is neither necessary nor sufficient: `81 0d 01 03` clears it without a reset, while
+`ndmreset` resets the target and does not clear it. `probe-rs reset` goes through
+`core.reset()` rather than the probe's own reset command, so it does not help either.
+
+To clear it by hand:
 
 ```bash
-wlink reset
-probe-rs reset --probe 1a86:8010:<serial> --chip <chip>
+wlink reset      # sends 81 0b 01 01; clears it, at the cost of resetting the target
 ```
 
 A debug probe whose vendor interface is already claimed — by a running `gdb`,

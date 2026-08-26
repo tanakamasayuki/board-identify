@@ -101,7 +101,7 @@ sudo /opt/board-identify/.venv/bin/board-identify cleanup
 
 ### デバッグプローブが間違ったチップを報告する
 
-ツールによっては、WCH-Link によるターゲットの読み取りが壊れた状態で残ります。CH32V003 に対する probe-rs 0.32 で確認しました。書き込みですらない `probe-rs read` だけで起こります。
+ツールによっては、WCH-Link によるターゲットの読み取りが壊れた状態で残ります。単線 SWIO 接続の CH32V003 に対する probe-rs 0.32 で確認しました。書き込みですらない `probe-rs read` だけで起こります。同じやり方で CH32V103 を叩いても起きないので、単線接続に固有の問題に見えます。
 
 ```text
 attach     82 0d 05 09 00 00 03 07          family 0x09 は正しく、チップ ID はゴミ
