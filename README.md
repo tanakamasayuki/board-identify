@@ -6,13 +6,15 @@ Identify microcontroller boards connected through serial devices and publish sta
 
 ## Initial scope
 
-Espressif devices are identified through `esptool`, and WCH-Link debug probes are
-identified along with whatever board is on their debug pins:
+Espressif devices are identified through `esptool`, WCH-Link debug probes are identified
+along with whatever board is on their debug pins, and a board whose USB descriptors an
+installed Arduino board definition recognises is named from sysfs alone:
 
 ```text
-/run/board-identify/by-id/esp32-s3-7cdfa1123456         -> /dev/ttyUSB2
-/run/board-identify/by-id/ch32x035c8t6-1ff9abcd880ebc48 -> /dev/ttyACM4
-/run/board-identify/by-id/wch-link-fc928f068181         -> /dev/ttyACM4
+/run/board-identify/by-id/esp32-s3-7cdfa1123456          -> /dev/ttyUSB2
+/run/board-identify/by-id/ch32x035c8t6-1ff9abcd880ebc48  -> /dev/ttyACM4
+/run/board-identify/by-id/wch-link-fc928f068181          -> /dev/ttyACM4
+/run/board-identify/by-id/arduino-uno-r4-wifi-3436733... -> /dev/ttyACM0
 ```
 
 The USB transport and the target board are treated separately. A CH340, FTDI, or CP210x
@@ -130,6 +132,78 @@ back to the series, and then to raw hex.
 RISC-V mode (`1a86:8010`, `1a86:8012`) is what the target step needs. In ARM mode
 (`1a86:8011`) the probe speaks CMSIS-DAP instead, so only the probe itself is named.
 
+## Boards recognised from their USB descriptors
+
+Arduino board definitions already record which VID/PID each board reports, one entry per
+bootloader state. [`src/board_identify/arduino_ids.py`](src/board_identify/arduino_ids.py)
+holds 825 of those pairs, 677 of which name a single board.
+
+The table is **not** read from a local Arduino installation, and installing a core is not
+what puts a board in it. A board only appears under `~/.arduino15` once its core has been
+set up, and the boards worth identifying are exactly the ones that have not been set up
+yet — you plug an unfamiliar board in *to find out what it is*. The table is merged
+instead from [`board_details.json`](https://tanakamasayuki.github.io/arduino-cli-helper/board_details.json),
+a periodically refreshed dump of `arduino-cli board details` covering a curated board
+list, and committed.
+
+It does two things, both from sysfs and both before the port is opened:
+
+- **It names a board.** One with a unique USB serial number is published straight from its
+  descriptors — an Arduino UNO R4 WiFi becomes
+  `arduino-uno-r4-wifi-34367333130351f0c1c1` with no USB traffic and no reset.
+- **It rules `esptool` out.** A pair a board definition attributes to another family is
+  not an Espressif target, so the port is never opened and the board is never reset to
+  learn what its descriptors already said. An Arduino UNO, a Raspberry Pi Pico, or an
+  STM32 Nucleo is left alone instead of being bounced into its bootloader on every plug
+  event.
+
+Only the second point applies to Espressif boards themselves. Their eFuse MAC comes from
+the silicon and outlives a bridge chip being replaced, so it is the better unique ID, and
+a pair the table attributes to an ESP32 still goes to `esptool`. That includes
+Arduino-branded ones: `2341:0070` is the Arduino Nano ESP32.
+
+### What the table refuses to say
+
+A stock USB-UART bridge ID — CH340, CP2102, FT232, PL2303 — identifies the cable and not
+the board in front of it. Those pairs are dropped while the table is merged and rejected
+again at lookup time, in both directions: such a port is never named from the table, and
+it is never kept away from `esptool` either, because a CH340 in front of an ESP32 is the
+case this project exists for.
+
+This is not a theoretical guard. The Sony Spresense claims the stock CP2102 ID
+`10c4:ea60`, so without it every CP2102 board on the machine — a large share of ESP32
+development boards among them — would be published as a Spresense and would never reach
+`esptool`. The price of dropping it is that a real Spresense is not recognised from its
+descriptors either, and still gets an `esptool` connect attempt.
+
+Two more cases are handled without dropping anything:
+
+- **Espressif against another family.** A pair both claim is dropped, because leaving it
+  out is what leaves the port open to `esptool`, the only thing left that can tell them
+  apart. None currently exists.
+- **Several boards, one pair.** `303a:1001` is the generic ESP32 family device and
+  `0483:5740` the generic STM32 virtual COM port; 148 pairs are shared like this. The
+  family is kept, which is all that is needed to rule a probe in or out, and the name is
+  dropped.
+
+### Updating the table
+
+```bash
+uv run python scripts/generate_usb_ids.py            # fetch and merge
+uv run python scripts/generate_usb_ids.py --check    # fail if anything would change
+uv run python scripts/generate_usb_ids.py --input board_details.json   # offline
+```
+
+The merge is **append-only**: an existing entry is never rewritten or removed, so a
+correction made by hand survives every later run, and a board already published under one
+name keeps it even if upstream renames the board. Entries are sorted by VID then PID
+before the file is written, so a hand-added line in the wrong place is tidied up rather
+than rejected. What was dropped, and why, is reported on stderr.
+
+To make the table forget a pair, add it to `GENERIC_BRIDGE_IDS` in
+[`src/board_identify/usb_ids.py`](src/board_identify/usb_ids.py) — deleting the line by
+hand only lasts until the next run.
+
 ## Requirements
 
 Install [uv](https://docs.astral.sh/uv/) before setting up the project.
@@ -233,19 +307,19 @@ Use it on a development machine. Do not use it where an environment has to stay 
 production, unattended test rigs, or anything driving hardware that must not restart.
 There, pin the devices with `/dev/serial/by-id/` or a udev rule as shown above.
 
-Current status: a WCH-Link is recognised from its descriptors, which ends the probe chain
-before `esptool` runs, but there is no general VID/PID fast path yet. Every other
-supported port is still probed by talking to it, including devices that could have been
-identified from their descriptors alone. See [Planned probes](#planned-probes).
+Current status: a port whose VID/PID a WCH-Link or a known Arduino board definition claims
+is settled from sysfs, which ends the probe chain before `esptool` runs. What still
+reaches `esptool` is what the descriptors genuinely leave open: a pair the table does not
+list, and any board behind a stock USB-UART bridge. See [Planned probes](#planned-probes).
 
 ## Planned probes
 
 - [x] Espressif ESP32 family via eFuse MAC
 - [x] WCH-Link debug probes, and WCH RISC-V targets behind them via the part UUID
-- [ ] Native USB serial descriptors
-- [ ] Arduino boards
-- [ ] RP2040
-- [ ] STM32
+- [x] Native USB serial descriptors
+- [x] Arduino boards, from the published `arduino-cli board details` VID/PID table
+- [x] RP2040, STM32, SAMD and nRF52 boards, from the same table
+- [ ] RP2040 and STM32 unique IDs read from the target
 - [ ] Generic firmware identification protocol
 
 See [`docs/adding-a-probe.md`](docs/adding-a-probe.md).

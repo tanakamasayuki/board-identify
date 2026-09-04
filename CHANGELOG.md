@@ -43,3 +43,34 @@
   confused. Recovery uses `81 0d 01 03`, which clears it without resetting the target,
   rather than `wlink reset`, which clears it by resetting.
 - Add `pyusb` as a dependency.
+- Recognise boards from their USB VID/PID, held as a committed table in `arduino_ids`.
+  `scripts/generate_usb_ids.py` merges it from `board_details.json`, a published dump of
+  `arduino-cli board details`. Deliberately not read from a local Arduino installation: a
+  board only appears there once its core is installed, and the boards worth identifying
+  are the ones that have not been set up yet. 825 pairs, 677 of which name a board.
+- Merge the table append-only and sorted by VID then PID, so a correction made by hand
+  survives every later run, a board keeps the name it was published under even if upstream
+  renames it, and a hand-added line in the wrong place is tidied up rather than rejected.
+  Adding a pair to `GENERIC_BRIDGE_IDS` is how to make the table forget one.
+- Add `UsbDescriptorProbe`, which names a board from that table plus its USB serial
+  number. No USB traffic, no open of the tty, and no reset: an Arduino UNO R4 WiFi is
+  published as `arduino-uno-r4-wifi-<serial>` from sysfs alone.
+- Skip `esptool` on a port whose VID/PID a board definition attributes to another family.
+  An Arduino UNO or a Nano Every is no longer bounced into its bootloader on every plug
+  event to learn what its descriptors already said. An unknown pair still goes to
+  `esptool`, and so does a board behind a stock USB-UART bridge.
+- Never let a stock USB-UART bridge ID speak for the board behind it. CH340, CP2102,
+  FT232, and PL2303 pairs are dropped during the merge and rejected again at lookup time,
+  in both directions, so such a port is neither named from the table nor kept away from
+  `esptool`. The Sony Spresense claims the stock CP2102 `10c4:ea60`, so without this every
+  CP2102 board would be published as a Spresense and never reach `esptool`.
+- Drop a pair Espressif and another family both claim, because leaving it out is what
+  leaves the port open to `esptool`. Let an architecture named after a core rather than
+  after silicon — `mbed`, `zephyr`, `host` — lose the tie instead of contesting it, so a
+  Seeed XIAO nRF52840 packaged under both `mbed` and `nrf52` resolves to `nrf52`. A pair
+  several boards of one family share keeps the family and loses the name.
+- Leave Espressif boards to `esptool` even when the table names them, because the eFuse
+  MAC outlives a bridge chip being replaced and a board must not have two names depending
+  on which probe got there first.
+- Drop accents in `normalize_component()` rather than treating them as punctuation, so
+  `Arduino Yún` folds to `arduino-yun` instead of `arduino-y-n`.

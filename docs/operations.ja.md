@@ -99,6 +99,29 @@ sudo /opt/board-identify/.venv/bin/board-identify identify --json --no-publish /
 sudo /opt/board-identify/.venv/bin/board-identify cleanup
 ```
 
+### ボードが識別されない、または想定外の名前になる
+
+USB ディスクリプタから命名されるボードは `src/board_identify/arduino_ids.py` に由来し、これは upstream のボードリストからマージしたものです。ローカルにコアをインストールしても増えません。増やすには新しい upstream のリストをマージします。
+
+```bash
+# テーブルがどの組み合わせを、何として名乗っているか。
+grep -i 2341 src/board_identify/arduino_ids.py
+
+# 取得してマージ。何を除外したかとその理由は標準エラー出力に出る。
+uv run python scripts/generate_usb_ids.py
+
+# 書き込まずに確認だけする。
+uv run python scripts/generate_usb_ids.py --check
+```
+
+マージは追加のみなので、upstream のリストにまだ載っていない組み合わせを手でテーブルに書き足しても、その後の実行で消えません。実行後は再インストールして、`/opt` 配下の配備済みコピーに新しいテーブルを反映させます。
+
+次の 3 つは不具合ではなく想定どおりの結果です。
+
+- USB シリアル番号を持たないボード（Arduino UNO R3 の多くのリビジョンなど）は、`esptool` を実行しない判断ができる程度には認識されますが、安定した名前は付けられないので `identify` は `2` で終了します。
+- 複数ボードが共有する組み合わせ（`303a:1001`、`0483:5740` ほか 146 組）は、ファミリだけを保持して名前を持たず、結果は同じです。
+- 汎用 USB-UART ブリッジ（CH340 モジュール、CP2102 など）の先にあるボードは、意図的にテーブルからは命名しません。その組み合わせが示すのはケーブルであって、その先にあるものではないからです。CP2102 の標準 ID を自分のものとして登録している Sony Spresense にも同じことが当てはまります。
+
 ### デバッグプローブが間違ったチップを報告する
 
 ツールによっては、WCH-Link によるターゲットの読み取りが壊れた状態で残ります。単線 SWIO 接続の CH32V003 に対する probe-rs 0.32 で確認しました。書き込みですらない `probe-rs read` だけで起こります。同じやり方で CH32V103 を叩いても起きないので、単線接続に固有の問題に見えます。

@@ -8,6 +8,7 @@ from board_identify.model import Identification
 from board_identify.paths import RUNTIME_DIR, by_id_dir, state_dir, state_path
 from board_identify.probes.base import Probe
 from board_identify.probes.espressif import EspressifProbe
+from board_identify.probes.usb_descriptor import UsbDescriptorProbe
 from board_identify.probes.wch_link import WchLinkProbe
 
 __all__ = [
@@ -25,8 +26,16 @@ def default_probes(probe_target: bool = True) -> list[Probe]:
 
     ``probe_target`` is passed to the probes that can identify a board without
     disturbing it; with it off they stay on USB descriptors.
+
+    The two descriptor probes come first because they read sysfs and nothing
+    else. ``esptool`` is last because it is the only one that resets the board
+    to find out what it is.
     """
-    return [WchLinkProbe(probe_target=probe_target), EspressifProbe()]
+    return [
+        WchLinkProbe(probe_target=probe_target),
+        UsbDescriptorProbe(),
+        EspressifProbe(),
+    ]
 
 
 def identify_port(port: Path, probes: list[Probe] | None = None) -> list[Identification]:

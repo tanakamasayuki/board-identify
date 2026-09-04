@@ -26,6 +26,8 @@ port name.
 | `model` | `Identification`, the result of one probe. |
 | `normalize` | Folding chip names and unique IDs into safe components. |
 | `usbinfo` | USB metadata for a port, read from sysfs without opening it. |
+| `usb_ids` | What a VID/PID pair may be taken to mean, and what it may not. |
+| `arduino_ids` | Generated: the pairs the installed Arduino board definitions claim. |
 | `probes/` | One class per target family, selected by `identify_port()`. |
 | `identify` | Probe dispatch, `publish()`, `remove_port()`. |
 | `cleanup` | Sweep of links and state left behind by disconnected devices. |
@@ -72,6 +74,54 @@ reader never observes a partial link or a half-written state file.
    `ExecStop=` runs `board-identify remove <port>`.
 5. `board-identify cleanup` additionally sweeps links and state that were left behind,
    for instance after a reboot of the daemon or an unclean stop.
+
+## The descriptor table
+
+`arduino_ids` maps a USB VID/PID pair to `(family, platform, variant)`. It is merged from
+[`board_details.json`](https://tanakamasayuki.github.io/arduino-cli-helper/board_details.json),
+a published dump of `arduino-cli board details`, by `scripts/generate_usb_ids.py`, and
+committed.
+
+Reading a local Arduino installation instead would have been the obvious thing to do and
+is the wrong answer twice over. A board only appears under `~/.arduino15` once its core is
+installed, and the boards worth identifying are the ones that have not been set up yet.
+Identification also runs from udev, where `$HOME` is not the user who installed anything,
+so a name must not depend on which machine, or which user, the port was plugged into.
+
+Two of the three fields are load bearing:
+
+- `variant` names the board, and is None when several boards share the pair.
+- `family` is the coarser claim, and the one that matters even when the name is missing:
+  a pair that belongs to another family cannot be an Espressif target, so `EspressifProbe`
+  declines the port instead of resetting a board to find out.
+
+The merge is append-only. An entry already in the table may have been corrected by hand,
+and a board already published under one name must keep it even if upstream renames the
+board, so the generator only ever adds. Entries are sorted by VID then PID on the way out,
+which keeps hand editing and machine merging from fighting over the file.
+
+A board's family comes from the architecture of the platform its FQBN names. Architectures
+named after a core or an OS rather than after silicon — `mbed`, `zephyr`, `host` — still
+produce a family, but lose the tie when another claimant of the same pair disagrees: a
+Seeed XIAO nRF52840 is packaged under both `mbed` and `nrf52`, and only the second says
+what the chip is.
+
+`usb_ids` holds what does not come from Arduino. Stock USB-UART bridge IDs — CH340,
+CP2102, FT232, PL2303 — name the cable, so they are filtered out during the merge *and*
+rejected again in `board_for_usb_id()`. The second check is not redundant: it keeps a
+table merged against a future source that does claim a stock bridge ID from speaking for
+every board behind one. The filter is deliberately symmetric — such a pair neither names
+a board nor rules a probe out — because a CH340 in front of an ESP32 is the case this
+project exists for.
+
+That guard is load bearing today, not a precaution: the Sony Spresense claims the stock
+CP2102 `10c4:ea60`. Without it, every CP2102 board on the machine would be published as a
+Spresense and kept away from `esptool`. Dropping it costs a real Spresense its descriptor
+name and an `esptool` connect attempt, which is the cheaper mistake by a wide margin.
+
+A pair Espressif and another family both claim is dropped rather than resolved, because
+leaving it out of the table is what leaves the port open to `esptool` — the only thing
+left that can tell the two apart.
 
 ## Debug probes
 
@@ -123,10 +173,16 @@ which is what a probe reads.
   the firmware restarts on every plug event; a WCH-Link attach holds the core and
   releases it again, which interrupts timing rather than restarting. Either way this is a
   development-environment tool, not something for an environment that must stay stable.
-- Descriptors are enough for some devices — a WCH-Link is recognised by VID/PID, which
-  ends the probe chain before `esptool` runs — but there is no general descriptor fast
-  path yet. A port that no probe recognises from sysfs is still identified by talking to
-  it.
+- The descriptor table is only as current as the last merge, and only as broad as the
+  board list upstream covers. A board neither lists is probed by talking to it, as before.
+- Descriptors name a model, not a unit. A board that reports no USB serial number, such as
+  many Arduino UNO R3 revisions, is recognised well enough to keep `esptool` away from it
+  and still cannot be published under a stable name.
+- A family is inferred from the architecture an entry's platform names. A package that
+  mixed silicon families under one architecture would attribute its boards to the wrong
+  one, and an Espressif board in such a package would lose its `esptool` pass.
+- A board whose descriptors are only claimed by a stock USB-UART bridge ID cannot be
+  recognised at all, by construction. The Sony Spresense is the current example.
 - Naming a target from a lookup table means a chip the table does not list falls back to
   its series, or to its raw signature. Adding the entry later renames the link: a name
   change across an upgrade rather than across a re-attach.

@@ -12,13 +12,24 @@
 
 A transport USB serial number is normally recorded as metadata rather than used as the
 target unique ID. A debug probe is the exception: it is a device in its own right, so it
-earns its own `Identification` alongside the target's.
+earns its own `Identification` alongside the target's. A board whose USB device is the
+board — the case `UsbDescriptorProbe` covers — is the other: there is no transport to
+confuse it with, so the serial number identifies the unit and `id_source` is `usb-serial`.
+
+A probe that can read an identifier out of the silicon should take precedence over the
+descriptors even so. `UsbDescriptorProbe` declines Espressif boards for that reason: the
+eFuse MAC outlives a bridge chip being replaced, and a board must not have two names
+depending on which probe got there first.
 
 ## Contract
 
 - `supports()` must be cheap and must not open the port. It is a pre-filter, not a
   positive match. Reading sysfs through `usbinfo` is cheap enough; opening the tty or
   talking over USB is not.
+- A probe that talks to the target should decline a port whose descriptors already name
+  another family. `board_for_port()` in `usb_ids` answers that from sysfs, and returns
+  None for anything it may not speak for, including stock USB-UART bridge IDs. Ruling a
+  port out this way is what keeps a board that cannot answer from being reset to prove it.
 - `identify()` must return an empty list for anything it does not recognise, including
   timeouts, non-zero exit statuses of external tools, and output it cannot parse. It
   must not raise for an unresponsive device.
@@ -39,6 +50,10 @@ into `identify()` (runs the subprocess) and `parse()` / `extract_*()` (pure func
 over captured output). `WchLinkProbe` splits three ways: `query()` opens the device,
 `session()` drives the command sequence against any object with `read`/`write`, and the
 `parse_*()` functions decode single replies.
+
+A probe backed by a lookup table keeps the table in its own module and the decisions in
+code, the way `UsbDescriptorProbe` splits into `arduino_ids` (data, merged and committed),
+`usb_ids` (what a pair may be taken to mean), and the probe itself (what to publish).
 
 Record real device output under `tests/fixtures/<tool>/` and load it with the
 `esptool_output` or `wch_reply` fixture pattern in `tests/conftest.py`. Include at least

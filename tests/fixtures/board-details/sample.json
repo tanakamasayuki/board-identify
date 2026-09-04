@@ -1,0 +1,70 @@
+{
+  "arduino:avr:uno": {
+    "name": "Arduino UNO",
+    "version": "1.8.8",
+    "config_options": [],
+    "usb_ids": [
+      { "vid": "0x2341", "pid": "0x0043" },
+      { "vid": "0x2341", "pid": "0x0001" }
+    ]
+  },
+  "arduino:avr:yun": {
+    "name": "Arduino Yún",
+    "version": "1.8.8",
+    "config_options": [],
+    "usb_ids": [{ "vid": "0x2341", "pid": "0x0041" }]
+  },
+  "arduino:avr:nousb": {
+    "name": "Board Without Descriptors",
+    "version": "1.8.8",
+    "config_options": []
+  },
+  "esp32:esp32:esp32_family": {
+    "name": "ESP32 Family Device",
+    "version": "3.3.11",
+    "config_options": [],
+    "usb_ids": [{ "vid": "0x303A", "pid": "0x1001" }]
+  },
+  "esp32:esp32:ozobot_drvkit": {
+    "name": "Ozobot DRVKit",
+    "version": "3.3.11",
+    "config_options": [],
+    "usb_ids": [{ "vid": "0x303A", "pid": "0x1001" }]
+  },
+  "SPRESENSE:spresense:spresense": {
+    "name": "Spresense",
+    "version": "3.4.2",
+    "config_options": [],
+    "usb_ids": [{ "vid": "0x10C4", "pid": "0xEA60" }]
+  },
+  "Seeeduino:mbed:xiaonRF52840Sense": {
+    "name": "XIAO nRF52840 Sense (No Updates)",
+    "version": "2.9.2",
+    "config_options": [],
+    "usb_ids": [{ "vid": "0x2886", "pid": "0x0045" }]
+  },
+  "Seeeduino:nrf52:xiaonRF52840Sense": {
+    "name": "XIAO nRF52840 Sense (No Updates)",
+    "version": "1.1.10",
+    "config_options": [],
+    "usb_ids": [{ "vid": "0x2886", "pid": "0x0045" }]
+  },
+  "vendor:esp32:impostor": {
+    "name": "Impostor",
+    "version": "1.0.0",
+    "config_options": [],
+    "usb_ids": [{ "vid": "0x2341", "pid": "0x0043" }]
+  },
+  "malformed": {
+    "name": "Not An FQBN",
+    "version": "1.0.0",
+    "config_options": [],
+    "usb_ids": [{ "vid": "0xBEEF", "pid": "0xF00D" }]
+  },
+  "vendor:avr:badids": {
+    "name": "Bad Descriptors",
+    "version": "1.0.0",
+    "config_options": [],
+    "usb_ids": [{ "vid": "nonsense", "pid": "0x0001" }, { "pid": "0x0002" }]
+  }
+}

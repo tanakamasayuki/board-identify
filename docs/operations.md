@@ -124,6 +124,38 @@ sudo /opt/board-identify/.venv/bin/board-identify identify --json --no-publish /
 sudo /opt/board-identify/.venv/bin/board-identify cleanup
 ```
 
+### A board is not identified, or is identified under an unexpected name
+
+Boards named from their USB descriptors come from `src/board_identify/arduino_ids.py`,
+merged from an upstream board list. Installing a core locally does not add anything to it;
+merging the newer upstream list does:
+
+```bash
+# Which pairs the table claims, and what for.
+grep -i 2341 src/board_identify/arduino_ids.py
+
+# Fetch and merge. The report on stderr says what was dropped and why.
+uv run python scripts/generate_usb_ids.py
+
+# Or just check, without writing.
+uv run python scripts/generate_usb_ids.py --check
+```
+
+The merge only adds, so a pair the upstream list still does not cover can be written into
+the table by hand and will survive every later run. Reinstall afterwards so the deployed
+copy under `/opt` picks the new table up.
+
+Three outcomes are expected rather than broken:
+
+- A board with no USB serial number, such as many Arduino UNO R3 revisions, is recognised
+  well enough that `esptool` is not run on it and still cannot be given a stable name, so
+  `identify` exits `2`.
+- A pair several boards share — `303a:1001`, `0483:5740` and 146 others — keeps its family
+  and has no name, with the same result.
+- A board behind a stock USB-UART bridge, a CH340 module or a CP2102, is not named from
+  the table on purpose: that pair says what the cable is, not what is behind it. This also
+  applies to the Sony Spresense, which claims the stock CP2102 ID as its own.
+
 ### A debug probe that reports the wrong chip
 
 Some tools leave the WCH-Link's readback of its target broken. Observed with probe-rs

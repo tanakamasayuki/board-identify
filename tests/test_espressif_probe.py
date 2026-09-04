@@ -8,6 +8,11 @@ from board_identify.probes import espressif
 from board_identify.probes.espressif import EspressifProbe
 
 Output = Callable[[str], str]
+Sysfs = Callable[..., Path]
+
+
+def descriptors(vid: str, pid: str) -> dict[str, str]:
+    return {"idVendor": vid, "idProduct": pid, "busnum": "001", "devnum": "007"}
 
 
 def test_extract_esp32_s3() -> None:
@@ -56,10 +61,35 @@ def test_output_without_mac_is_not_identified() -> None:
 
 
 def test_supports_only_serial_ports() -> None:
-    probe = EspressifProbe()
+    probe = EspressifProbe(sysfs_root=Path("/nonexistent"))
     assert probe.supports(Path("/dev/ttyUSB0"))
     assert probe.supports(Path("/dev/ttyACM1"))
     assert not probe.supports(Path("/dev/ttyS0"))
+
+
+def test_does_not_support_a_board_definition_claims_for_another_family(sysfs: Sysfs) -> None:
+    # 2341:006d is the Arduino UNO R4 WiFi. Connecting to it would reset a board
+    # that cannot answer, so the descriptors end the chain before esptool runs.
+    root = sysfs(port_name="ttyACM0", attributes=descriptors("2341", "006d"))
+    assert not EspressifProbe(sysfs_root=root).supports(Path("/dev/ttyACM0"))
+
+
+def test_supports_a_board_definition_claims_for_espressif(sysfs: Sysfs) -> None:
+    # 2341:0070 is the Arduino Nano ESP32: same vendor, an Espressif target.
+    root = sysfs(port_name="ttyACM0", attributes=descriptors("2341", "0070"))
+    assert EspressifProbe(sysfs_root=root).supports(Path("/dev/ttyACM0"))
+
+
+def test_supports_a_stock_usb_uart_bridge(sysfs: Sysfs) -> None:
+    # A CH340 hides boards of every family, so the question stays open and the
+    # port still goes to esptool.
+    root = sysfs(port_name="ttyUSB0", attributes=descriptors("1a86", "7523"))
+    assert EspressifProbe(sysfs_root=root).supports(Path("/dev/ttyUSB0"))
+
+
+def test_supports_a_pair_no_board_definition_claims(sysfs: Sysfs) -> None:
+    root = sysfs(port_name="ttyUSB0", attributes=descriptors("0000", "0000"))
+    assert EspressifProbe(sysfs_root=root).supports(Path("/dev/ttyUSB0"))
 
 
 @pytest.mark.parametrize(

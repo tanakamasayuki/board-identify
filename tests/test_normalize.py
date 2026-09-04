@@ -12,8 +12,10 @@ from board_identify.normalize import normalize_component, normalize_unique_id
         ("ESP32-S3", "esp32-s3"),
         ("  ESP32 S3  ", "esp32-s3"),
         ("ESP32-C3 (QFN32)", "esp32-c3-qfn32"),
-        ("ＥＳＰ３２", "esp32"),  # noqa: RUF001 - full-width input is folded by NFKC
+        ("ＥＳＰ３２", "esp32"),  # noqa: RUF001 - full-width input is folded by NFKD
         ("--esp32--", "esp32"),
+        ("Arduino Yún", "arduino-yun"),  # an accent is dropped, not split on
+        ("Arduino Yún Mini", "arduino-yun-mini"),
     ],
 )
 def test_normalize_component(value: str, expected: str) -> None:
