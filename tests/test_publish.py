@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from board_identify import __version__
 from board_identify.identify import (
     identify_port,
     publish,
@@ -52,6 +53,16 @@ def test_publish_writes_state(tmp_path: Path) -> None:
     assert state["port"] == "/dev/ttyUSB9"
     assert state["identifications"][0]["board_id"] == "esp32-s3-7cdfa1123456"
     assert read_state("ttyUSB9", runtime_dir=tmp_path) == state
+
+
+def test_publish_records_the_release_that_wrote_the_state(tmp_path: Path) -> None:
+    # Which release published a link is what tells a name written under an older
+    # naming rule apart from one this version would write today.
+    publish([make_identification(Path("/dev/ttyUSB9"))], runtime_dir=tmp_path)
+
+    state = read_state("ttyUSB9", runtime_dir=tmp_path)
+    assert state is not None
+    assert state["version"] == __version__
 
 
 def test_publish_is_idempotent(tmp_path: Path) -> None:

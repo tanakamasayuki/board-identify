@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 
+from board_identify import __version__
 from board_identify.model import Identification
 from board_identify.paths import RUNTIME_DIR, by_id_dir, state_dir, state_path
 from board_identify.probes.base import Probe
@@ -161,6 +162,10 @@ def _write_state(port: Path, results: list[Identification], runtime_dir: Path) -
     """Record what was published for ``port``, atomically."""
     path = state_path(port.name, runtime_dir)
     payload = {
+        # Recorded so a link can be traced back to the release that published it,
+        # which is what tells a name written under an older naming rule apart
+        # from one this version would write today.
+        "version": __version__,
         "port": str(port),
         "board_ids": [result.board_id for result in results],
         "identifications": [result.to_dict() for result in results],

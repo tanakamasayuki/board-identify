@@ -223,6 +223,12 @@ uv run ruff format --check .
 uv run mypy src tests
 ```
 
+The version lives in `src/board_identify/__init__.py` and nowhere else;
+`pyproject.toml` reads it from there. Releases are cut by the `Release` workflow from the
+Actions tab, which runs those checks, moves the changelog's `## Unreleased` entries into a
+`## <version>` section, tags `v<version>`, and publishes the wheel and sdist. See
+[Releasing](docs/releasing.md).
+
 ## Manual use
 
 ```bash
@@ -330,4 +336,5 @@ See [`docs/adding-a-probe.md`](docs/adding-a-probe.md).
 - [Identifier format](docs/identifier-format.md)
 - [Operations](docs/operations.md)
 - [Adding a probe](docs/adding-a-probe.md)
-- [Changelog](CHANGELOG.md)
+- [Releasing](docs/releasing.md)
+- [Changelog / 変更履歴](CHANGELOG.md)

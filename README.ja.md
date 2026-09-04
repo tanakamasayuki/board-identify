@@ -144,6 +144,8 @@ uv run ruff format --check .
 uv run mypy src tests
 ```
 
+バージョンは `src/board_identify/__init__.py` にだけ書かれていて、`pyproject.toml` はそこから読みます。リリースは Actions タブの `Release` ワークフローが作ります。上記のチェックを実行し、変更履歴の `## Unreleased` の項目を `## <version>` の節へ移し、`v<version>` のタグを打ち、wheel と sdist を公開します。[リリース](docs/releasing.ja.md) を参照してください。
+
 ## 手動での利用
 
 ```bash
@@ -240,4 +242,5 @@ USB の VID/PID で特定できないものは、ターゲットと通信して�
 - [識別子の形式](docs/identifier-format.ja.md)
 - [運用](docs/operations.ja.md)
 - [プローブの追加](docs/adding-a-probe.ja.md)
-- [変更履歴](CHANGELOG.ja.md)
+- [リリース](docs/releasing.ja.md)
+- [変更履歴](CHANGELOG.md)

@@ -1,0 +1,131 @@
+# Cut a release: run the checks, raise the version, close the changelog, tag, publish.
+#
+# This project is not an Arduino library, so it does not use the shared
+# https://github.com/tanakamasayuki/arduino-library-release-toolkit workflow.
+# The shape is the same, over this project's own files, and without a `release`
+# branch: there is nothing to strip out of a Python package, so the default
+# branch is tagged directly.
+#
+# See docs/releasing.md.
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_level:
+        description: "Version component to bump"
+        required: false
+        default: "patch"
+        type: choice
+        options: [patch, minor, major]
+      version:
+        description: "Exact version to release, overriding the level. For example 1.0.0"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # Tags come with the full history, and the tag check below needs them.
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure Git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install the project
+        run: uv sync
+
+      # Nothing is tagged before this passes. A published tag is permanent, so a
+      # late release is better than a broken one.
+      - name: Run the checks
+        run: |
+          uv run pytest
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy src tests
+
+      - name: Plan the release
+        id: plan
+        env:
+          LEVEL: ${{ inputs.version_level }}
+          EXPLICIT: ${{ inputs.version }}
+        run: |
+          ARGUMENTS=(--level "$LEVEL")
+          if [ -n "$EXPLICIT" ]; then
+            ARGUMENTS+=(--set "$EXPLICIT")
+          fi
+          # Refuses an empty changelog, a version that does not follow the
+          # current one, and anything else that would make a bad release.
+          uv run python scripts/bump_version.py --preview "${ARGUMENTS[@]}" \
+            | tee -a "$GITHUB_OUTPUT"
+
+      - name: Refuse a tag that already exists
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "$TAG already exists."
+            exit 1
+          fi
+
+      - name: Bump the version, close the changelog, write the notes
+        env:
+          LEVEL: ${{ inputs.version_level }}
+          EXPLICIT: ${{ inputs.version }}
+        run: |
+          ARGUMENTS=(--level "$LEVEL")
+          if [ -n "$EXPLICIT" ]; then
+            ARGUMENTS+=(--set "$EXPLICIT")
+          fi
+          # Outside the work tree, so it cannot end up in the commit or the sdist.
+          uv run python scripts/bump_version.py \
+            --notes "$RUNNER_TEMP/release-notes.md" "${ARGUMENTS[@]}"
+
+      - name: Commit and push
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          git add CHANGELOG.md src/board_identify/__init__.py
+          git commit -m "Release $VERSION"
+          git push origin HEAD:"$DEFAULT_BRANCH"
+
+      - name: Build the distributions
+        run: uv build
+
+      - name: Tag and push
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          gh release create "$TAG" dist/* \
+            --title "$TAG" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            --target "$DEFAULT_BRANCH"

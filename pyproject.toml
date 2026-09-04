@@ -4,7 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "board-identify"
-version = "0.1.0"
+# Single source of truth: src/board_identify/__init__.py, which
+# scripts/bump_version.py rewrites. See docs/releasing.md.
+dynamic = ["version"]
 description = "Identify serial-connected microcontroller boards"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -40,6 +42,9 @@ strict = true
 [[tool.mypy.overrides]]
 module = ["esptool.*", "esptool", "usb.*"]
 ignore_missing_imports = true
+
+[tool.setuptools.dynamic]
+version = { attr = "board_identify.__version__" }
 
 [tool.setuptools.package-data]
 board_identify = ["py.typed"]
