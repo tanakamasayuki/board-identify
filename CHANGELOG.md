@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+## 1.0.0
 - (EN) Identify Espressif targets through `esptool` and name them by their eFuse MAC
 - (JA) Espressif ターゲットを `esptool` で識別し、eFuse MAC で命名
 - (EN) Identify WCH-Link debug probes from USB descriptors alone, and the WCH RISC-V target behind one from its chip signature and factory UUID
