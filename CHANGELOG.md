@@ -7,10 +7,14 @@
 - (JA) 共有されるボード名は、より残っていそうなポートが受け取り、保持していたポートが消えたときは、まだそれを名乗っているポートへ戻すようにした。以前はボードが名無しになっていた
 - (EN) Keep the state of a live port that holds no link, because it is a claim on the board rather than a receipt for a link
 - (JA) リンクを 1 つも保持していない生きたポートの状態を維持するようにした。それはリンクの受領証ではなくボードへの主張だから
-- (EN) Name an Espressif native USB port from its serial descriptor, which is the eFuse MAC, instead of running `esptool` and losing the port to the reset that ends the run
-- (JA) Espressif のネイティブ USB ポートは、eFuse MAC であるシリアルディスクリプタから命名するようにした。`esptool` を実行すると、その最後のリセットでポート自体を失うため
-- (EN) Record `unique ID -> chip name` in `/run/board-identify/variants.json` whenever a target is reached, so the ports that cannot ask do not have to
-- (JA) ターゲットへ到達するたびに `固有 ID -> チップ名` を `/run/board-identify/variants.json` に記録し、自分では尋ねられないポートが尋ねずに済むようにした
+- (EN) Name a port that is the target's own USB peripheral from its descriptors, down to the series, instead of opening it: the eFuse MAC is in the serial descriptor and is what makes the name unique, and opening the port reboots the board and takes the port with it
+- (JA) ターゲット自身の USB ペリフェラルであるポートは、開かずにディスクリプタからシリーズまでの名前を付けるようにした。eFuse MAC がシリアルディスクリプタにあり、名前を一意にしているのはそれであり、ポートを開けばボードが再起動してポートごと消えるため
+- (EN) Call such a board `esp32-series-<mac>` rather than `esp32-<mac>`, so a chip that was never asked does not read as the original ESP32, which is what `esptool` calls `esp32`
+- (JA) そうしたボードは `esp32-<mac>` ではなく `esp32-series-<mac>` と命名し、尋ねていないチップが無印 ESP32（`esptool` が `esp32` と呼ぶもの）に見えないようにした
+- (EN) Add `--probe-native-usb` for a native port whose descriptors name nothing at all, which is firmware running a CDC class of its own; a port that reports its MAC is named the same way with the flag or without it
+- (JA) ディスクリプタが何も語らないネイティブポート（自前の CDC クラスを動かしているファームウェア）のために `--probe-native-usb` を追加した。MAC を報告するポートはフラグの有無で名前が変わらない
+- (EN) Extend `--no-target-probe` to `esptool` as well, so it now means nothing is opened at all rather than debug probes only
+- (JA) `--no-target-probe` を `esptool` にも効かせ、デバッグプローブだけでなく「何も開かない」の意味に統一した
 
 ## 1.0.0
 - (EN) Identify Espressif targets through `esptool` and name them by their eFuse MAC

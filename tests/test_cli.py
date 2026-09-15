@@ -169,7 +169,7 @@ def test_no_target_probe_reaches_the_probe_factory(
 ) -> None:
     asked: list[bool] = []
 
-    def record(probe_target: bool, runtime_dir: Path) -> list[object]:
+    def record(probe_target: bool, probe_native_usb: bool) -> list[object]:
         asked.append(probe_target)
         return []
 

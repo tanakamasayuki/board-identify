@@ -1,12 +1,21 @@
 """Identify Espressif targets by their eFuse MAC, from descriptors or through esptool.
 
 An Espressif chip with its own USB peripheral publishes that MAC as its USB
-serial descriptor, so on such a port the identifier is readable from sysfs. That
-path is taken whenever the chip name behind the MAC is already known, because
-running ``esptool`` on a native-USB port destroys the port: the reset at the end
-of the run re-enumerates the device, and the link published seconds earlier goes
-with it. Every other port still goes to ``esptool``, which is also what fills in
-the chip name the descriptor path needs.
+serial descriptor, so on such a port the identifier is readable from sysfs. Such
+a port is not opened at all by default: pyserial raises DTR and RTS on open, and
+on a board wired for native USB that reboots it, on top of the reset ``esptool``
+performs deliberately. The board would also take its own tty down with it, so
+the link published seconds earlier goes too.
+
+Such a port is named from its descriptors alone instead, down to the series
+rather than the chip. A port in front of the target — a CH340, a CP2102 — has no
+such descriptors and still goes to ``esptool``, which does read the chip.
+
+``probe_target`` turns that off as well, leaving every port on descriptors.
+``probe_native_usb`` is the escape hatch for a native port whose descriptors say
+nothing either, which is firmware that brought up a CDC class of its own rather
+than the USB-Serial/JTAG peripheral; a port that does report its MAC is named
+without it, and names itself the same way with or without it.
 """
 
 import os
@@ -17,14 +26,23 @@ from pathlib import Path
 
 from board_identify.model import Identification, TransportKind
 from board_identify.normalize import normalize_component, normalize_unique_id
-from board_identify.paths import RUNTIME_DIR
 from board_identify.usb_ids import ESPRESSIF_FAMILY, board_for_port, transport_kind_for_device
 from board_identify.usbinfo import SYSFS_ROOT, usb_device_for_port
-from board_identify.variants import recall_variant
 
 # Espressif's own vendor ID, which a board reports when the tty is the chip's
 # USB-Serial/JTAG peripheral rather than a bridge in front of it.
 ESPRESSIF_VENDOR_ID = 0x303A
+
+# What such a port can be called without asking the chip anything. Every ESP32
+# with a USB-Serial/JTAG reports 303a:1001, so the descriptors go no further than
+# the series — but the eFuse MAC beside it is what makes the name unique, and
+# that is the whole job. Nothing will refine this later either, because nothing
+# opens the port, so the name a board gets here it keeps.
+#
+# Not plain "esp32": that is what esptool calls the original ESP32, so a board
+# that was never asked must not borrow the name of one that was. The suffix says
+# the series is as far as this got.
+NATIVE_USB_VARIANT = "esp32-series"
 
 DEFAULT_BAUD = 115200
 DEFAULT_CONNECT_ATTEMPTS = 2
@@ -76,12 +94,14 @@ class EspressifProbe:
         baud: int = DEFAULT_BAUD,
         timeout: float = DEFAULT_TIMEOUT,
         sysfs_root: Path = SYSFS_ROOT,
-        runtime_dir: Path = RUNTIME_DIR,
+        probe_target: bool = True,
+        probe_native_usb: bool = False,
     ) -> None:
         self.baud = baud
         self.timeout = timeout
         self.sysfs_root = sysfs_root
-        self.runtime_dir = runtime_dir
+        self.probe_target = probe_target
+        self.probe_native_usb = probe_native_usb
 
     def supports(self, port: Path) -> bool:
         # Any USB-serial port may hide an Espressif target behind the bridge, so
@@ -102,6 +122,8 @@ class EspressifProbe:
         from_descriptors = self.identify_from_descriptors(port)
         if from_descriptors is not None:
             return [from_descriptors]
+        if not self.may_open(port):
+            return []
 
         try:
             completed = subprocess.run(
@@ -133,6 +155,36 @@ class EspressifProbe:
         result = self.parse(port, completed.stdout + completed.stderr, transport_kind=kind)
         return [] if result is None else [result]
 
+    def may_open(self, port: Path) -> bool:
+        """Whether this run is allowed to open ``port`` and talk to the target.
+
+        Opening a port resets the board behind it, so the question is asked per
+        port rather than once: the native USB ports are the ones where the reset
+        is not only disruptive but takes the port away, and they are held back
+        unless the caller asks for them.
+        """
+        if not self.probe_target:
+            return False
+        if self.probe_native_usb:
+            return True
+        return transport_kind_for_device(usb_device_for_port(port, self.sysfs_root)) != "usb"
+
+    def native_usb_unique_id(self, port: Path) -> str | None:
+        """The eFuse MAC in the serial descriptor of a native USB port, or None.
+
+        This is the whole unique half of the board's name, readable without
+        opening anything. What is missing on such a port is only the chip name.
+        """
+        device = usb_device_for_port(port, self.sysfs_root)
+        if device is None or device.vid != ESPRESSIF_VENDOR_ID:
+            return None
+        if device.serial is None or not MAC_PATTERN.fullmatch(device.serial):
+            return None
+        try:
+            return normalize_unique_id(device.serial)
+        except ValueError:
+            return None
+
     def identify_from_descriptors(self, port: Path) -> Identification | None:
         """Name the board from sysfs alone, or None when that is not enough.
 
@@ -140,31 +192,25 @@ class EspressifProbe:
         serial descriptor is the eFuse MAC — the same identifier ``esptool``
         would read, without the traffic and without the reset. The chip name is
         not in the descriptors, because every ESP32 with a USB-Serial/JTAG
-        reports ``303a:1001``, so this returns None until something has learned
-        it and the caller falls back to ``esptool``.
+        reports ``303a:1001``, so the name stops at the series. That is enough:
+        the MAC is what makes it unique, and a board named here keeps that name,
+        because nothing will ever open the port to refine it.
         """
+        unique_id = self.native_usb_unique_id(port)
+        if unique_id is None:
+            return None
         device = usb_device_for_port(port, self.sysfs_root)
-        if device is None or device.vid != ESPRESSIF_VENDOR_ID:
-            return None
-        if device.serial is None or not MAC_PATTERN.fullmatch(device.serial):
-            return None
-
-        try:
-            unique_id = normalize_unique_id(device.serial)
-        except ValueError:
-            return None
-
-        variant = recall_variant(unique_id, self.runtime_dir)
-        if variant is None:
+        if device is None or device.serial is None:
             return None
 
         return Identification(
             port=port,
             family="espressif",
-            variant=variant,
+            variant=NATIVE_USB_VARIANT,
             unique_id=unique_id,
-            # The MAC is the chip's, not an adapter's, however it was read.
-            id_source="target-mac",
+            # The board's own USB, so the serial number is the unit and not a
+            # cable — the same sense UsbDescriptorProbe uses it in.
+            id_source="usb-serial",
             transport_kind="usb",
             usb_vid=f"{device.vid:04x}",
             usb_pid=f"{device.pid:04x}",

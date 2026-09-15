@@ -9,6 +9,8 @@ from board_identify import __version__
 from board_identify.cleanup import cleanup
 from board_identify.identify import default_probes, identify_port, publish, remove_port
 from board_identify.paths import RUNTIME_DIR
+from board_identify.probes.base import Probe
+from board_identify.probes.espressif import EspressifProbe
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -36,7 +38,16 @@ def build_parser() -> argparse.ArgumentParser:
     identify_parser.add_argument(
         "--no-target-probe",
         action="store_true",
-        help="stay on USB descriptors instead of talking to the board behind a debug probe",
+        help="stay on USB descriptors instead of talking to the target at all",
+    )
+    identify_parser.add_argument(
+        "--probe-native-usb",
+        action="store_true",
+        help=(
+            "open a port that is the target's own USB peripheral, which reboots the board "
+            "and re-enumerates the port. Only reaches a port whose descriptors name "
+            "nothing at all; one that reports its MAC is named without it either way"
+        ),
     )
 
     remove_parser = subparsers.add_parser("remove", help="drop the link and state of one port")
@@ -70,7 +81,10 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _identify(args: argparse.Namespace, runtime_dir: Path) -> int:
-    probes = default_probes(probe_target=not args.no_target_probe, runtime_dir=runtime_dir)
+    probes = default_probes(
+        probe_target=not args.no_target_probe,
+        probe_native_usb=args.probe_native_usb,
+    )
     try:
         results = identify_port(args.port, probes=probes)
     except FileNotFoundError:
@@ -78,7 +92,7 @@ def _identify(args: argparse.Namespace, runtime_dir: Path) -> int:
         return EXIT_ERROR
 
     if not results:
-        print(f"unable to identify: {args.port}", file=sys.stderr)
+        print(_unidentified(args.port, probes), file=sys.stderr)
         return EXIT_UNIDENTIFIED
 
     links = [] if args.no_publish else publish(results, runtime_dir=runtime_dir)
@@ -107,6 +121,24 @@ def _identify(args: argparse.Namespace, runtime_dir: Path) -> int:
         for result in results:
             print(result.board_id)
     return EXIT_OK
+
+
+def _unidentified(port: Path, probes: list[Probe]) -> str:
+    """Why a port went unnamed, said as precisely as the probes can say it."""
+    for probe in probes:
+        if not isinstance(probe, EspressifProbe) or probe.may_open(port):
+            continue
+        if not probe.probe_target:
+            return (
+                f"unable to identify: {port}: nothing in its descriptors names this "
+                "board, and --no-target-probe kept every port closed."
+            )
+        return (
+            f"unable to identify: {port}: nothing in its descriptors names this board, "
+            "not even a MAC, and this port is the board's own USB, which is not opened "
+            "because that reboots the board. Pass --probe-native-usb to open it anyway."
+        )
+    return f"unable to identify: {port}"
 
 
 def _link_for(name: str | None, links: dict[str, Path]) -> str | None:

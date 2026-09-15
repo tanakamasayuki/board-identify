@@ -12,7 +12,6 @@ from board_identify.identify import (
     state_board_ids,
 )
 from board_identify.model import Identification, TransportKind
-from board_identify.variants import recall_variant
 
 
 def make_port(tmp_path: Path, name: str) -> Path:
@@ -335,19 +334,3 @@ def test_the_last_port_to_go_takes_the_name_with_it(tmp_path: Path) -> None:
     remove_port("ttyUSB0", runtime_dir=tmp_path)
 
     assert list((tmp_path / "by-id").iterdir()) == []
-
-
-def test_publish_remembers_the_chip_name_of_a_target(tmp_path: Path) -> None:
-    # So the native USB port of the same chip never has to reset it to find out.
-    publish([esp32_on(make_port(tmp_path, "ttyUSB0"), "uart")], runtime_dir=tmp_path)
-
-    assert recall_variant("e4b063b4a81c", tmp_path) == "esp32-s3"
-
-
-def test_publish_does_not_remember_an_adapter_serial(tmp_path: Path) -> None:
-    # A probe is named from its own USB serial number, which says nothing about
-    # any target and must not be offered to another port as if it did.
-    port = make_port(tmp_path, "ttyACM4")
-    publish([make_probe_identification(port)], runtime_dir=tmp_path)
-
-    assert recall_variant("fc928f068181", tmp_path) is None

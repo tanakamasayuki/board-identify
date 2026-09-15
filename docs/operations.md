@@ -163,20 +163,27 @@ answers on two ports, and both read the same MAC, so both resolve to one board I
 ports are named:
 
 ```bash
-ls -l /run/board-identify/by-id/ | grep esp32-s3-e4b063b4a81c
+ls -l /run/board-identify/by-id/ | grep e4b063b4a81c
 # esp32-s3-e4b063b4a81c      -> /dev/ttyUSB2    the preferred path
 # esp32-s3-e4b063b4a81c-uart -> /dev/ttyUSB2    through the CH340
-# esp32-s3-e4b063b4a81c-usb  -> /dev/ttyACM12   the board's own USB
+# esp32-series-e4b063b4a81c         -> /dev/ttyACM12   the board's own USB
+# esp32-series-e4b063b4a81c-usb     -> /dev/ttyACM12
 ```
 
 Use a qualified name when you mean a specific path. The unqualified one follows the bridge
 while it is there, because a native USB port re-enumerates whenever the chip resets and
 the name would otherwise disappear on every upload.
 
-If only the `-usb` name is there, nothing has established which chip that MAC belongs to
-yet — `303a:1001` is every ESP32 with a USB-Serial/JTAG. Plug the bridge in once, or wait
-for the one `esptool` run on the native port, and the chip name is recorded in
-`/run/board-identify/variants.json` for every port afterwards.
+The two names are not equally specific, and that is on purpose. A bridge is opened and
+`esptool` reads the chip; a board's own USB is never opened, because that reboots the board
+and re-enumerates the port, so it is named from its descriptors — which carry the eFuse MAC
+but not the chip, since `303a:1001` is every ESP32 with a USB-Serial/JTAG. `esp32-series`
+is how that name says the chip is unconfirmed; `esp32` on its own would read as the
+original ESP32. The MAC in both names is what says they are one board.
+
+A native port with no name at all reported no MAC either, which means firmware that brought
+up a CDC class of its own. `board-identify identify --probe-native-usb /dev/ttyACM12` names
+that one at the cost of rebooting the board.
 
 ### A debug probe that reports the wrong chip
 

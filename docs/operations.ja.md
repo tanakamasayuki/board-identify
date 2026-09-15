@@ -127,15 +127,18 @@ uv run python scripts/generate_usb_ids.py --check
 オンボードのネイティブ USB と、同じ UART に付いた CH340 の両方を挿した ESP32-S3 は 2 つのポートで応答し、どちらも同じ MAC を読むので 1 つのボード ID に解決します。両方のポートに名前は付きます。
 
 ```bash
-ls -l /run/board-identify/by-id/ | grep esp32-s3-e4b063b4a81c
+ls -l /run/board-identify/by-id/ | grep e4b063b4a81c
 # esp32-s3-e4b063b4a81c      -> /dev/ttyUSB2    優先される経路
 # esp32-s3-e4b063b4a81c-uart -> /dev/ttyUSB2    CH340 経由
-# esp32-s3-e4b063b4a81c-usb  -> /dev/ttyACM12   ボード自身の USB
+# esp32-series-e4b063b4a81c         -> /dev/ttyACM12   ボード自身の USB
+# esp32-series-e4b063b4a81c-usb     -> /dev/ttyACM12
 ```
 
 特定の経路を指したいときは修飾付きの名前を使ってください。修飾なしの名前は、ブリッジがある間はブリッジに追従します。ネイティブ USB のポートはチップがリセットするたびに再列挙されるので、そうしないと書き込みのたびに名前が消えてしまうからです。
 
-`-usb` の名前しか出ていない場合は、その MAC がどのチップのものかをまだ誰も確定していません。`303a:1001` は USB-Serial/JTAG を持つすべての ESP32 だからです。ブリッジを一度挿すか、ネイティブポートに対する 1 回の `esptool` 実行を待てば、チップ名が `/run/board-identify/variants.json` に記録され、以降はすべてのポートがそれを使います。
+2 つの名前の細かさが違うのは意図したものです。ブリッジは開かれ、`esptool` がチップを読みます。ボード自身の USB は決して開きません。開けばボードが再起動しポートが再列挙されるからで、ディスクリプタから命名します。そこには eFuse MAC はありますがチップ名はありません。`303a:1001` は USB-Serial/JTAG を持つすべての ESP32 だからです。`esp32-series` という名前が、チップが未確認であることを示します。`esp32` だけでは無印 ESP32 と読めてしまうためです。両方の名前に入っている MAC が、同じ 1 枚のボードであることを示します。
+
+ネイティブポートに名前がまったく出ていない場合は、MAC も報告されなかったということで、自前の CDC クラスを立ち上げたファームウェアです。その場合は `board-identify identify --probe-native-usb /dev/ttyACM12` がボードの再起動と引き換えに名前を付けます。
 
 ### デバッグプローブが間違ったチップを報告する
 

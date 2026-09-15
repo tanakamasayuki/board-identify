@@ -12,7 +12,6 @@ from board_identify.probes.base import Probe
 from board_identify.probes.espressif import EspressifProbe
 from board_identify.probes.usb_descriptor import UsbDescriptorProbe
 from board_identify.probes.wch_link import WchLinkProbe
-from board_identify.variants import remember_variant
 
 __all__ = [
     "TRANSPORT_PREFERENCE",
@@ -38,10 +37,6 @@ TRANSPORT_PREFERENCE: tuple[TransportKind, ...] = ("uart", "probe", "usb")
 
 _TRANSPORT_KINDS: dict[str, TransportKind] = {kind: kind for kind in TRANSPORT_PREFERENCE}
 
-# Identifiers that come from the silicon rather than from an adapter, and can
-# therefore be recorded as what that target *is*. See board_identify.variants.
-TARGET_ID_SOURCES = frozenset({"target-mac", "target-cpu-id"})
-
 
 @dataclass(frozen=True)
 class Claim:
@@ -58,11 +53,16 @@ class Claim:
     published_at: int = 0
 
 
-def default_probes(probe_target: bool = True, runtime_dir: Path = RUNTIME_DIR) -> list[Probe]:
+def default_probes(
+    probe_target: bool = True,
+    probe_native_usb: bool = False,
+) -> list[Probe]:
     """Probes tried in order for an unknown port, least intrusive first.
 
-    ``probe_target`` is passed to the probes that can identify a board without
-    disturbing it; with it off they stay on USB descriptors.
+    ``probe_target`` is off when nothing may be opened at all, which leaves every
+    probe on USB descriptors. ``probe_native_usb`` is the narrower permission:
+    with it on, a port that is the target's own USB peripheral may be opened too,
+    which reboots the board and re-enumerates the port.
 
     The two descriptor probes come first because they read sysfs and nothing
     else. ``esptool`` is last because it is the only one that resets the board
@@ -71,7 +71,7 @@ def default_probes(probe_target: bool = True, runtime_dir: Path = RUNTIME_DIR) -
     return [
         WchLinkProbe(probe_target=probe_target),
         UsbDescriptorProbe(),
-        EspressifProbe(runtime_dir=runtime_dir),
+        EspressifProbe(probe_target=probe_target, probe_native_usb=probe_native_usb),
     ]
 
 
@@ -237,9 +237,6 @@ def publish(results: list[Identification], runtime_dir: Path = RUNTIME_DIR) -> l
     # The state file goes first, because settle() reads the recorded claims back
     # and this port has to be among them before a shared name is handed out.
     _write_state(port, list(by_board_id.values()), runtime_dir)
-    for result in by_board_id.values():
-        if result.id_source in TARGET_ID_SOURCES:
-            remember_variant(result.unique_id, result.variant, runtime_dir)
 
     for board_id in sorted(dropped):
         _release(board_id, port, links)

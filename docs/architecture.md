@@ -16,10 +16,10 @@ most specific first, and each one becomes its own link to the same port.
 
 One board can be reachable through more than one port, which is the same thing from the
 other side. An ESP32-S3 with its own USB peripheral wired up next to a CH340 on the same
-UART answers on two ports at once, and both read the same eFuse MAC, so both resolve to
-the same board ID. Each identification therefore also carries the **kind** of transport it
-came through — `uart`, `usb` or `probe` — and publishes a qualified link of its own
-alongside the shared board name. See [Two ports, one board](#two-ports-one-board).
+UART answers on two ports at once. Each identification therefore also carries the **kind**
+of transport it came through — `uart`, `usb` or `probe` — and publishes a qualified link of
+its own, so one path can be addressed without the other. See
+[Two ports, one board](#two-ports-one-board).
 
 The publisher creates one atomic symlink per identification in
 `/run/board-identify/by-id/` and records the whole set as state keyed by the transient
@@ -37,7 +37,6 @@ port name.
 | `arduino_ids` | Generated: the pairs the installed Arduino board definitions claim. |
 | `probes/` | One class per target family, selected by `identify_port()`. |
 | `identify` | Probe dispatch, `publish()`, `remove_port()`. |
-| `variants` | Chip names learned from a target, for the ports that cannot ask. |
 | `cleanup` | Sweep of links and state left behind by disconnected devices. |
 | `cli` | `identify`, `remove`, and `cleanup` subcommands. |
 
@@ -48,16 +47,16 @@ port name.
 ├── by-id/
 │   ├── esp32-s3-7cdfa1123456 -> /dev/ttyUSB2
 │   ├── esp32-s3-7cdfa1123456-uart -> /dev/ttyUSB2
-│   ├── esp32-s3-7cdfa1123456-usb -> /dev/ttyACM12
+│   ├── esp32-series-7cdfa1123456 -> /dev/ttyACM12
+│   ├── esp32-series-7cdfa1123456-usb -> /dev/ttyACM12
 │   ├── ch32x035c8t6-1ff9abcd880ebc48 -> /dev/ttyACM4
 │   ├── ch32x035c8t6-1ff9abcd880ebc48-probe -> /dev/ttyACM4
 │   ├── wch-link-fc928f068181 -> /dev/ttyACM4
 │   └── wch-link-fc928f068181-probe -> /dev/ttyACM4
-├── state/
-│   ├── ttyACM4.json
-│   ├── ttyACM12.json
-│   └── ttyUSB2.json
-└── variants.json
+└── state/
+    ├── ttyACM4.json
+    ├── ttyACM12.json
+    └── ttyUSB2.json
 ```
 
 Links are keyed by board, state files by port, and one state file can claim several
@@ -80,13 +79,16 @@ reader never observes a partial link or a half-written state file.
 ## Two ports, one board
 
 A board ID names the board. It says nothing about how the host reaches it, which is
-deliberate — the whole point is that the name survives a re-attach — but it means two
-ports onto one chip produce one name between them. The qualified name closes that gap:
+deliberate — the whole point is that the name survives a re-attach — but it leaves a board
+on two ports with nothing that tells the two apart. The qualified name closes that gap:
 `<board-id>-<transport kind>` belongs to a single port, so a script that means *the CH340
 in front of this ESP32-S3* can say so, and a script that just means *this board* uses the
-unqualified name.
+unqualified name. Every identification publishes both, so a specific path can always be
+named without checking what else is plugged in.
 
-The unqualified name goes to the preferred claimant while several hold the board at once:
+Two ports can also arrive at the *same* board ID, and then only one of them can hold it —
+two bridges onto one chip, or a bridge beside a native port that `--probe-native-usb`
+opened. The unqualified name goes to the preferred claimant:
 
 | Kind | | Why |
 | --- | --- | --- |
@@ -175,20 +177,39 @@ is the same identifier `esptool` reads, sitting in sysfs. What is *not* in the d
 is the chip name, because every ESP32 with a USB-Serial/JTAG reports `303a:1001`, S3, C3
 and P4 alike — which is why `arduino_ids` holds that pair with no variant.
 
-Running `esptool` on such a port to find out costs the port itself. The reset at the end of
-the run re-enumerates the device, the tty disappears a second or two after it was named,
-`ExecStop=` drops the link, and the re-enumeration starts the whole thing again. Left
-alone it does not converge.
+That port is never opened. pyserial raises DTR and RTS on open and `esptool` resets the
+chip deliberately, so either way the board reboots — and unlike a bridge, this port goes
+down with it. The tty disappears a second or two after it was named, `ExecStop=` drops the
+link, and the re-enumeration starts the whole thing over. Left alone it does not converge.
 
-So `EspressifProbe` takes the descriptor path whenever it can, and only the chip name has
-to come from somewhere else. `variants` is that somewhere: every identification made from
-the silicon records `unique ID -> chip name`, so the CH340 in front of the same chip, or
-the same native port after it re-enumerated, names the board from sysfs alone — no USB
-traffic, no reset. A target nothing has ever reached still falls back to `esptool`, once,
-and fills the cache on the way through.
+So such a port is named from its descriptors and nothing else, which stops at the series:
 
-The cache lives in the runtime directory and does not survive a reboot. It does not need
-to: at boot udev walks every tty again, and the first port to reach the target refills it.
+```text
+esp32-series-30eda0e31478-usb -> /dev/ttyACM10
+```
+
+`esp32-series` and not `esp32`, because `esp32` is what `esptool` calls the original ESP32.
+A board that was never asked must not borrow the name of one that was; the suffix says the
+series is as far as this got, and that the chip behind it is unconfirmed.
+
+A series is a coarse name and a complete one. What a stable link needs is to be unique and
+to stay put, and the MAC delivers both; the chip name is a description of the board, not
+its identity. Nothing will refine it afterwards either, because nothing opens the port, so
+a board named here keeps that name for good.
+
+The same board reached through a bridge is named `esp32-p4-30eda0e31478`, because
+`esptool` does read the chip there. One board can therefore carry two names, one per path,
+with the MAC in both saying they are the same board. Reading the JTAG TAP ID over the
+chip's own vendor USB interface would close that gap — OpenOCD identifies a target that
+way, and the TAP IDs are in its configuration files — but a board being used as a serial
+port has not offered its debug interface, and taking it is not this tool's business.
+
+`--probe-native-usb` opens a native port anyway. It only reaches a port whose descriptors
+say nothing at all, which is firmware that brought up a CDC class of its own rather than
+the USB-Serial/JTAG peripheral; a port that reports its MAC is named the same way with the
+flag or without it, because a name that changed with the caller's options would not be a
+stable name. `--no-target-probe` is the opposite end: nothing is opened at all, by any
+probe, which also keeps `esptool` off the bridges.
 
 ## Debug probes
 
@@ -259,9 +280,11 @@ which is what a probe reads.
 - A stale link cannot be detected once the kernel has handed the same node name to
   another device. That case is resolved by the next `publish()` for that port, not by
   `cleanup`.
-- The descriptor path needs a serial descriptor that is the MAC, which is what the
-  USB-Serial/JTAG peripheral reports. Firmware that brings up a CDC class of its own can
-  put anything there, and such a port goes to `esptool` with the re-enumeration that costs.
+- A port that is the target's own USB peripheral carries half of its own name — the MAC
+  is in the serial descriptor — and cannot supply the other half without being opened, so
+  it stays unnamed unless `--probe-native-usb` is passed. Firmware that brings up a CDC
+  class of its own rather than the USB-Serial/JTAG peripheral does not even report the
+  MAC, so such a port has nothing readable at all.
 - A claim is only as fresh as the plug event that made it. A board moved from one debug
   probe to another, both of them still connected, leaves the first probe claiming a target
   that is no longer on its pins, and that claim can take the board name back when the

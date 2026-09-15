@@ -22,15 +22,19 @@ serial number identifies the adapter, not necessarily the board behind it. A deb
 is both at once, so it gets a link of its own next to the one for its target.
 
 One board can also answer on two ports at once — an ESP32-S3 with its own USB peripheral
-alongside a CH340 on the same UART reads the same MAC either way — so each link is
-published twice: once under the board's name, and once under that name with the transport
-appended, which addresses one specific path.
+alongside a CH340 on the same UART — so every link is published twice: once under the
+board's name, and once with the transport appended, which addresses one specific path.
 
 ```text
-/run/board-identify/by-id/esp32-s3-e4b063b4a81c          -> /dev/ttyUSB2
 /run/board-identify/by-id/esp32-s3-e4b063b4a81c-uart     -> /dev/ttyUSB2
-/run/board-identify/by-id/esp32-s3-e4b063b4a81c-usb      -> /dev/ttyACM12
+/run/board-identify/by-id/esp32-series-e4b063b4a81c-usb         -> /dev/ttyACM12
 ```
+
+A board's own USB is never opened, because that reboots it and takes the port down. Its
+descriptors carry the eFuse MAC but not the chip name, so that path stops at the series —
+`esp32-series`, marking the chip as unconfirmed rather than borrowing the name of the
+original `esp32` — while the bridge in front of the same chip does name the chip. The MAC
+in both says they are one board.
 
 ## Use the standard mechanisms first
 

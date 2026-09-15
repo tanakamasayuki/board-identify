@@ -6,7 +6,6 @@ import pytest
 
 from board_identify.probes import espressif
 from board_identify.probes.espressif import EspressifProbe
-from board_identify.variants import remember_variant
 
 Output = Callable[[str], str]
 Sysfs = Callable[..., Path]
@@ -151,9 +150,11 @@ NATIVE_USB = {
     "product": "USB JTAG/serial debug unit",
 }
 
+CH340 = {"idVendor": "1a86", "idProduct": "7523", "busnum": "001", "devnum": "006"}
+
 
 def refuse_to_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make any esptool call fail the test rather than reset a board."""
+    """Make any esptool call fail the test rather than reboot a board."""
 
     def fail(*args: object, **kwargs: object) -> object:
         raise AssertionError("esptool must not run on this port")
@@ -161,67 +162,94 @@ def refuse_to_run(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(subprocess, "run", fail)
 
 
-def test_native_usb_port_is_named_from_descriptors(
-    monkeypatch: pytest.MonkeyPatch, sysfs: Sysfs, tmp_path: Path
-) -> None:
-    # The serial descriptor of a USB-Serial/JTAG is the eFuse MAC, so once the
-    # chip name is known the whole identifier is readable without a reset — and
-    # a reset here would take the port itself down with it.
-    remember_variant("e4b063b4a81c", "esp32-s3", tmp_path)
-    refuse_to_run(monkeypatch)
-    root = sysfs(port_name="ttyACM12", attributes=NATIVE_USB, interface="3-7:1.0")
-
-    probe = EspressifProbe(sysfs_root=root, runtime_dir=tmp_path)
-    (result,) = probe.identify(Path("/dev/ttyACM12"))
-
-    assert result.board_id == "esp32-s3-e4b063b4a81c"
-    assert result.transport_kind == "usb"
-    assert result.path_id == "esp32-s3-e4b063b4a81c-usb"
-    assert result.usb_serial == "E4:B0:63:B4:A8:1C"
-
-
-def test_native_usb_port_falls_back_to_esptool_for_an_unknown_chip(
-    monkeypatch: pytest.MonkeyPatch, sysfs: Sysfs, tmp_path: Path, esptool_output: Output
-) -> None:
-    # 303a:1001 is every ESP32 with a USB-Serial/JTAG, so nothing but the target
-    # itself can say which one this is the first time it turns up.
-    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=esptool_output("esp32-s3-v5.txt"), stderr=""
-        )
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    root = sysfs(port_name="ttyACM12", attributes=NATIVE_USB, interface="3-7:1.0")
-
-    probe = EspressifProbe(sysfs_root=root, runtime_dir=tmp_path)
-    (result,) = probe.identify(Path("/dev/ttyACM12"))
-
-    assert result.board_id == "esp32-s3-7cdfa1123456"
-    assert result.transport_kind == "usb"
-
-
-def test_a_bridge_port_is_never_named_from_descriptors(
-    monkeypatch: pytest.MonkeyPatch, sysfs: Sysfs, tmp_path: Path, esptool_output: Output
-) -> None:
-    # A CH340 serial number names the cable. Even with the board behind it
-    # already in the cache, there is nothing in these descriptors to match it to.
-    remember_variant("e4b063b4a81c", "esp32-s3", tmp_path)
+def record_runs(monkeypatch: pytest.MonkeyPatch, output: str) -> list[object]:
+    """Capture the esptool invocations a probe makes, and answer them."""
     calls: list[object] = []
 
     def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append(args)
-        return subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=esptool_output("esp32-s3-v5.txt"), stderr=""
-        )
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout=output, stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    return calls
+
+
+def test_a_native_usb_port_is_named_without_being_opened(
+    monkeypatch: pytest.MonkeyPatch, sysfs: Sysfs
+) -> None:
+    # pyserial raises DTR and RTS on open, and esptool resets the chip on top of
+    # that, so opening the board's own USB reboots it and takes the port along.
+    # The serial descriptor is the eFuse MAC, which is the whole unique half of
+    # the name, so the port is named from sysfs and left alone.
+    refuse_to_run(monkeypatch)
+    root = sysfs(port_name="ttyACM12", attributes=NATIVE_USB, interface="3-7:1.0")
+
+    probe = EspressifProbe(sysfs_root=root)
+    assert probe.may_open(Path("/dev/ttyACM12")) is False
+    (result,) = probe.identify(Path("/dev/ttyACM12"))
+
+    assert result.board_id == "esp32-series-e4b063b4a81c"
+    assert result.path_id == "esp32-series-e4b063b4a81c-usb"
+    assert result.id_source == "usb-serial"
+    assert result.transport_kind == "usb"
+
+
+def test_the_name_of_a_native_usb_port_does_not_depend_on_the_flag(
+    monkeypatch: pytest.MonkeyPatch, sysfs: Sysfs
+) -> None:
+    # A name that changed with the caller's options would not be a stable name,
+    # so a port that reports its MAC is named the same way either way.
+    refuse_to_run(monkeypatch)
+    root = sysfs(port_name="ttyACM12", attributes=NATIVE_USB, interface="3-7:1.0")
+
+    held_back = EspressifProbe(sysfs_root=root).identify(Path("/dev/ttyACM12"))
+    allowed = EspressifProbe(sysfs_root=root, probe_native_usb=True).identify(Path("/dev/ttyACM12"))
+
+    assert [result.board_id for result in held_back] == ["esp32-series-e4b063b4a81c"]
+    assert [result.board_id for result in allowed] == ["esp32-series-e4b063b4a81c"]
+
+
+def test_a_native_usb_port_without_a_mac_is_left_alone(
+    monkeypatch: pytest.MonkeyPatch, sysfs: Sysfs
+) -> None:
+    # Firmware that brought up a CDC class of its own reports no MAC, so there
+    # is nothing to name it with and nothing may be opened to find out.
+    refuse_to_run(monkeypatch)
     root = sysfs(
-        port_name="ttyUSB0",
-        attributes={"idVendor": "1a86", "idProduct": "7523", "busnum": "001", "devnum": "006"},
-        interface="1-5:1.0",
+        port_name="ttyACM12",
+        attributes={**NATIVE_USB, "serial": "1234"},
+        interface="3-7:1.0",
     )
 
-    probe = EspressifProbe(sysfs_root=root, runtime_dir=tmp_path)
+    assert EspressifProbe(sysfs_root=root).identify(Path("/dev/ttyACM12")) == []
+
+
+def test_a_native_usb_port_without_a_mac_is_opened_when_asked(
+    monkeypatch: pytest.MonkeyPatch, sysfs: Sysfs, esptool_output: Output
+) -> None:
+    calls = record_runs(monkeypatch, esptool_output("esp32-s3-v5.txt"))
+    root = sysfs(
+        port_name="ttyACM12",
+        attributes={**NATIVE_USB, "serial": "1234"},
+        interface="3-7:1.0",
+    )
+
+    probe = EspressifProbe(sysfs_root=root, probe_native_usb=True)
+    (result,) = probe.identify(Path("/dev/ttyACM12"))
+
+    assert calls
+    assert result.board_id == "esp32-s3-7cdfa1123456"
+
+
+def test_a_bridge_port_is_opened(
+    monkeypatch: pytest.MonkeyPatch, sysfs: Sysfs, esptool_output: Output
+) -> None:
+    # The reset a bridge costs is the documented price of identification, and
+    # unlike a native port the bridge is still there afterwards.
+    calls = record_runs(monkeypatch, esptool_output("esp32-s3-v5.txt"))
+    root = sysfs(port_name="ttyUSB0", attributes=CH340, interface="1-5:1.0")
+
+    probe = EspressifProbe(sysfs_root=root)
     (result,) = probe.identify(Path("/dev/ttyUSB0"))
 
     assert calls
@@ -229,16 +257,45 @@ def test_a_bridge_port_is_never_named_from_descriptors(
     assert result.path_id == "esp32-s3-7cdfa1123456-uart"
 
 
-def test_a_serial_that_is_not_a_mac_is_not_an_identifier(
-    monkeypatch: pytest.MonkeyPatch, sysfs: Sysfs, tmp_path: Path
+def test_no_target_probe_stops_esptool_everywhere(
+    monkeypatch: pytest.MonkeyPatch, sysfs: Sysfs
 ) -> None:
+    refuse_to_run(monkeypatch)
+    root = sysfs(port_name="ttyUSB0", attributes=CH340, interface="1-5:1.0")
+
+    probe = EspressifProbe(sysfs_root=root, probe_target=False, probe_native_usb=True)
+    assert probe.may_open(Path("/dev/ttyUSB0")) is False
+    assert probe.identify(Path("/dev/ttyUSB0")) == []
+
+
+def test_the_mac_of_a_native_usb_port_is_readable_from_sysfs(sysfs: Sysfs) -> None:
+    # The serial descriptor of a USB-Serial/JTAG is the eFuse MAC, which is the
+    # whole unique half of the name. Only the chip name is missing.
+    root = sysfs(port_name="ttyACM12", attributes=NATIVE_USB, interface="3-7:1.0")
+
+    probe = EspressifProbe(sysfs_root=root)
+    assert probe.native_usb_unique_id(Path("/dev/ttyACM12")) == "e4b063b4a81c"
+
+
+def test_a_serial_that_is_not_a_mac_is_not_an_identifier(sysfs: Sysfs) -> None:
     # Firmware that brings up its own CDC class can put anything in there.
-    remember_variant("e4b063b4a81c", "esp32-s3", tmp_path)
     root = sysfs(
         port_name="ttyACM12",
         attributes={**NATIVE_USB, "serial": "1234"},
         interface="3-7:1.0",
     )
 
-    probe = EspressifProbe(sysfs_root=root, runtime_dir=tmp_path)
-    assert probe.identify_from_descriptors(Path("/dev/ttyACM12")) is None
+    probe = EspressifProbe(sysfs_root=root)
+    assert probe.native_usb_unique_id(Path("/dev/ttyACM12")) is None
+
+
+def test_a_bridge_has_no_native_usb_identifier(sysfs: Sysfs) -> None:
+    # A CH340 serial number names the cable, never the board behind it.
+    root = sysfs(
+        port_name="ttyUSB0",
+        attributes={**CH340, "serial": "0001B2C3"},
+        interface="1-5:1.0",
+    )
+
+    probe = EspressifProbe(sysfs_root=root)
+    assert probe.native_usb_unique_id(Path("/dev/ttyUSB0")) is None

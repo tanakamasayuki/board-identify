@@ -56,16 +56,19 @@ qualified name, which is the board ID with the kind of transport appended:
 ```
 
 ```text
-esp32-s3-e4b063b4a81c       -> /dev/ttyUSB2   the preferred path
 esp32-s3-e4b063b4a81c-uart  -> /dev/ttyUSB2   through the CH340
-esp32-s3-e4b063b4a81c-usb   -> /dev/ttyACM12  the board's own USB
+esp32-series-e4b063b4a81c-usb      -> /dev/ttyACM12  the board's own USB
 ```
 
 The qualified name is always published, whether or not anything else claims the board, so
-a script can address one specific path without having to check first. The unqualified name
-goes to the port most likely to still be there — see
-[Two ports, one board](architecture.md#two-ports-one-board) — and moves to the other one
-when that port goes away.
+a script can address one specific path without having to check first.
+
+How specific the two are can differ. A bridge is opened and `esptool` reads the chip; the
+board's own USB is not opened at all, so it is named from the descriptors, which carry the
+MAC but not the chip — hence `esp32-series`, which says the chip is unconfirmed instead of
+borrowing `esp32`, the name of the original one. The MAC is what makes either name unique,
+so both are stable names for the same board. When two ports do land on one board ID, only one of them can hold the
+unqualified form; see [Two ports, one board](architecture.md#two-ports-one-board).
 
 ## Where a variant comes from
 
@@ -93,6 +96,20 @@ to the series and then to the raw signature:
 | family `0x0d`, chip ID `0x03510601` | `ch32x035c8t6` |
 | family `0x0d`, chip ID not listed | `ch32x035` |
 | neither listed | `wch-0d-03510601` |
+
+An Espressif target is as specific as the port allows. A bridge is opened and `esptool`
+names the chip; the board's own USB is never opened, so the descriptors have to answer,
+and they stop at the series:
+
+| Port | Variant |
+| --- | --- |
+| a bridge, so `esptool` reads the chip | `esp32-s3` |
+| the board's own USB, read from descriptors | `esp32-series` |
+
+`esp32-series` is not a chip. It is the name for a board that was recognised as an ESP32
+and never asked which one, and it is spelled that way so it cannot be mistaken for
+`esp32`, the original chip. A board named this way keeps the name: nothing opens the port
+later to refine it.
 
 ## Normalisation
 
