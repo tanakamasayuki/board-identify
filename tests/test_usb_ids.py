@@ -10,9 +10,17 @@ from board_identify.usb_ids import (
     board_for_port,
     board_for_usb_id,
     is_generic_bridge,
+    transport_kind_for_device,
+    transport_kind_for_port,
 )
+from board_identify.usbinfo import UsbDevice
 
 Sysfs = Callable[..., Path]
+
+
+def usb_device(vid: int, pid: int) -> UsbDevice:
+    return UsbDevice(path=Path("/sys"), vid=vid, pid=pid, bus=1, address=7)
+
 
 CH340 = (0x1A86, 0x7523)
 UNO_R4_WIFI = (0x2341, 0x006D)
@@ -77,3 +85,26 @@ def test_board_for_port_reads_sysfs(sysfs: Sysfs) -> None:
 
 def test_board_for_port_without_usb_device() -> None:
     assert board_for_port(Path("/dev/ttyS0"), sysfs_root=Path("/nonexistent")) is None
+
+
+def test_a_stock_bridge_is_a_uart_path() -> None:
+    assert transport_kind_for_device(usb_device(*CH340)) == "uart"
+
+
+def test_a_pair_the_vendor_programmed_is_the_board_itself() -> None:
+    # An ESP32 USB-Serial/JTAG, and any native-USB Arduino board.
+    assert transport_kind_for_device(usb_device(0x303A, 0x1001)) == "usb"
+    assert transport_kind_for_device(usb_device(*UNO_R4_WIFI)) == "usb"
+
+
+def test_a_tty_with_no_usb_behind_it_is_a_uart() -> None:
+    assert transport_kind_for_device(None) == "uart"
+
+
+def test_transport_kind_for_port_reads_sysfs(sysfs: Sysfs) -> None:
+    root = sysfs(
+        port_name="ttyUSB0",
+        attributes={"idVendor": "1a86", "idProduct": "7523", "busnum": "001", "devnum": "006"},
+        interface="1-5:1.0",
+    )
+    assert transport_kind_for_port(Path("/dev/ttyUSB0"), root) == "uart"

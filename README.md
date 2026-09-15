@@ -21,6 +21,17 @@ The USB transport and the target board are treated separately. A CH340, FTDI, or
 serial number identifies the adapter, not necessarily the board behind it. A debug probe
 is both at once, so it gets a link of its own next to the one for its target.
 
+One board can also answer on two ports at once — an ESP32-S3 with its own USB peripheral
+alongside a CH340 on the same UART reads the same MAC either way — so each link is
+published twice: once under the board's name, and once under that name with the transport
+appended, which addresses one specific path.
+
+```text
+/run/board-identify/by-id/esp32-s3-e4b063b4a81c          -> /dev/ttyUSB2
+/run/board-identify/by-id/esp32-s3-e4b063b4a81c-uart     -> /dev/ttyUSB2
+/run/board-identify/by-id/esp32-s3-e4b063b4a81c-usb      -> /dev/ttyACM12
+```
+
 ## Use the standard mechanisms first
 
 This tool exists for the cases the standard Linux mechanisms cannot cover. **If any of
@@ -290,7 +301,9 @@ See [`docs/operations.md`](docs/operations.md) for details and troubleshooting.
 1. Inspect the serial device and USB metadata.
 2. Run target-specific probes when needed.
 3. Generate `<variant>-<unique-id>` for every identity the port has.
-4. Atomically publish one symlink each under `/run/board-identify/by-id/`.
+4. Atomically publish that name with the transport appended, which belongs to this port,
+   and settle the bare name on the best port claiming it, under
+   `/run/board-identify/by-id/`.
 5. Store current state under `/run/board-identify/state/`.
 
 ## Scope: development environments only

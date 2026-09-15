@@ -2,7 +2,13 @@
 
 from pathlib import Path
 
-from board_identify.identify import link_points_to, read_state, state_board_ids
+from board_identify.identify import (
+    link_points_to,
+    path_link_names,
+    read_state,
+    settle,
+    state_board_ids,
+)
 from board_identify.paths import RUNTIME_DIR, by_id_dir, state_dir
 
 __all__ = ["cleanup"]
@@ -13,6 +19,7 @@ def cleanup(runtime_dir: Path = RUNTIME_DIR) -> list[Path]:
     removed: list[Path] = []
     links = by_id_dir(runtime_dir)
     states = state_dir(runtime_dir)
+    seen: set[str] = set()
 
     # State files are handled first so that a link and the state describing it
     # disappear together. Note that a stale link cannot be detected once the
@@ -29,24 +36,26 @@ def cleanup(runtime_dir: Path = RUNTIME_DIR) -> list[Path]:
                 removed.append(state_path)
                 continue
 
-            owned = [
-                board_id for board_id in board_ids if link_points_to(links / board_id, Path(port))
-            ]
-
-            if not Path(port).exists():
-                for board_id in owned:
-                    (links / board_id).unlink(missing_ok=True)
-                    removed.append(links / board_id)
-                state_path.unlink(missing_ok=True)
-                removed.append(state_path)
+            seen.update(board_ids)
+            if Path(port).exists():
+                # A live port keeps its record even when it holds no link at
+                # all, because the record is a claim rather than a receipt. Two
+                # ports onto one chip resolve to the same board ID and only one
+                # of them can hold that name; dropping the other's claim is what
+                # used to leave the board nameless once the holder went away.
                 continue
 
-            # The port is live. Its remaining links are still correct, so only a
-            # record that owns nothing at all is stale: every name it claimed has
-            # been taken over by another port.
-            if not owned:
-                state_path.unlink(missing_ok=True)
-                removed.append(state_path)
+            for board_id in board_ids:
+                for name in (board_id, *path_link_names(board_id)):
+                    if link_points_to(links / name, Path(port)):
+                        (links / name).unlink(missing_ok=True)
+                        removed.append(links / name)
+            state_path.unlink(missing_ok=True)
+            removed.append(state_path)
+
+    # Every name whose holder just went away goes to whoever still claims it.
+    for board_id in sorted(seen):
+        settle(board_id, runtime_dir)
 
     # Sweep dangling links, for instance ones whose state file was lost.
     if links.is_dir():

@@ -14,6 +14,13 @@ in itself, but a debug probe is: it has its own serial number, and the board on 
 pins can be swapped for another. A probe therefore returns a list of identifications,
 most specific first, and each one becomes its own link to the same port.
 
+One board can be reachable through more than one port, which is the same thing from the
+other side. An ESP32-S3 with its own USB peripheral wired up next to a CH340 on the same
+UART answers on two ports at once, and both read the same eFuse MAC, so both resolve to
+the same board ID. Each identification therefore also carries the **kind** of transport it
+came through — `uart`, `usb` or `probe` — and publishes a qualified link of its own
+alongside the shared board name. See [Two ports, one board](#two-ports-one-board).
+
 The publisher creates one atomic symlink per identification in
 `/run/board-identify/by-id/` and records the whole set as state keyed by the transient
 port name.
@@ -26,10 +33,11 @@ port name.
 | `model` | `Identification`, the result of one probe. |
 | `normalize` | Folding chip names and unique IDs into safe components. |
 | `usbinfo` | USB metadata for a port, read from sysfs without opening it. |
-| `usb_ids` | What a VID/PID pair may be taken to mean, and what it may not. |
+| `usb_ids` | What a VID/PID pair may be taken to mean, and what it may not, and which kind of transport it is. |
 | `arduino_ids` | Generated: the pairs the installed Arduino board definitions claim. |
 | `probes/` | One class per target family, selected by `identify_port()`. |
 | `identify` | Probe dispatch, `publish()`, `remove_port()`. |
+| `variants` | Chip names learned from a target, for the ports that cannot ask. |
 | `cleanup` | Sweep of links and state left behind by disconnected devices. |
 | `cli` | `identify`, `remove`, and `cleanup` subcommands. |
 
@@ -39,11 +47,17 @@ port name.
 /run/board-identify/
 ├── by-id/
 │   ├── esp32-s3-7cdfa1123456 -> /dev/ttyUSB2
+│   ├── esp32-s3-7cdfa1123456-uart -> /dev/ttyUSB2
+│   ├── esp32-s3-7cdfa1123456-usb -> /dev/ttyACM12
 │   ├── ch32x035c8t6-1ff9abcd880ebc48 -> /dev/ttyACM4
-│   └── wch-link-fc928f068181 -> /dev/ttyACM4
-└── state/
-    ├── ttyACM4.json
-    └── ttyUSB2.json
+│   ├── ch32x035c8t6-1ff9abcd880ebc48-probe -> /dev/ttyACM4
+│   ├── wch-link-fc928f068181 -> /dev/ttyACM4
+│   └── wch-link-fc928f068181-probe -> /dev/ttyACM4
+├── state/
+│   ├── ttyACM4.json
+│   ├── ttyACM12.json
+│   └── ttyUSB2.json
+└── variants.json
 ```
 
 Links are keyed by board, state files by port, and one state file can claim several
@@ -63,13 +77,43 @@ links:
 Both are written to a temporary name and moved into place with `os.replace()`, so a
 reader never observes a partial link or a half-written state file.
 
+## Two ports, one board
+
+A board ID names the board. It says nothing about how the host reaches it, which is
+deliberate — the whole point is that the name survives a re-attach — but it means two
+ports onto one chip produce one name between them. The qualified name closes that gap:
+`<board-id>-<transport kind>` belongs to a single port, so a script that means *the CH340
+in front of this ESP32-S3* can say so, and a script that just means *this board* uses the
+unqualified name.
+
+The unqualified name goes to the preferred claimant while several hold the board at once:
+
+| Kind | | Why |
+| --- | --- | --- |
+| `uart` | a USB-UART bridge | Stays enumerated while the target resets. |
+| `probe` | a debug probe's serial interface | The same, and it survives the target being held. |
+| `usb` | the target's own USB peripheral | Goes down with the chip, taking its tty with it. |
+
+A name pinned to a native USB port would blink out on every reset and every upload, so
+the bridge wins. Between two claims of the same kind the more recent one wins, and the
+port name breaks a remaining tie, so the answer never depends on the order events arrived
+in. The qualified names stay valid either way; this only decides which link is the
+convenient one.
+
+A state file is therefore a **claim** and not a receipt. A port that lost the shared name
+to another port keeps its record, which is what lets the name come back when the holder
+goes away: `settle()` re-points the unqualified link at the best remaining live claimant,
+and removes it only when nothing claims the board any more. `publish()`, `remove_port()`
+and `cleanup()` all end by settling every name they touched.
+
 ## Lifecycle
 
 1. udev sees a new `ttyUSB*` or `ttyACM*` node and starts `board-identify@<port>.service`.
 2. `identify_port()` asks each probe whether it supports the port, then to identify it.
-3. `publish()` writes one link per identification plus the state file. A name the port
-   claimed last time but not this time is dropped first, so a target unplugged from its
-   debug probe does not leave a link behind.
+3. `publish()` writes the state file first, then one qualified link per identification,
+   then settles each unqualified name. A name the port claimed last time but not this
+   time is released first, so a target unplugged from its debug probe does not leave a
+   link behind.
 4. When the device disappears, the unit is stopped through `BindsTo=`, and its
    `ExecStop=` runs `board-identify remove <port>`.
 5. `board-identify cleanup` additionally sweeps links and state that were left behind,
@@ -122,6 +166,29 @@ name and an `esptool` connect attempt, which is the cheaper mistake by a wide ma
 A pair Espressif and another family both claim is dropped rather than resolved, because
 leaving it out of the table is what leaves the port open to `esptool` — the only thing
 left that can tell the two apart.
+
+## Espressif native USB
+
+An Espressif chip with its own USB peripheral publishes its eFuse MAC as the USB serial
+descriptor: `/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_30:ED:A0:E3:14:78`
+is the same identifier `esptool` reads, sitting in sysfs. What is *not* in the descriptors
+is the chip name, because every ESP32 with a USB-Serial/JTAG reports `303a:1001`, S3, C3
+and P4 alike — which is why `arduino_ids` holds that pair with no variant.
+
+Running `esptool` on such a port to find out costs the port itself. The reset at the end of
+the run re-enumerates the device, the tty disappears a second or two after it was named,
+`ExecStop=` drops the link, and the re-enumeration starts the whole thing again. Left
+alone it does not converge.
+
+So `EspressifProbe` takes the descriptor path whenever it can, and only the chip name has
+to come from somewhere else. `variants` is that somewhere: every identification made from
+the silicon records `unique ID -> chip name`, so the CH340 in front of the same chip, or
+the same native port after it re-enumerated, names the board from sysfs alone — no USB
+traffic, no reset. A target nothing has ever reached still falls back to `esptool`, once,
+and fills the cache on the way through.
+
+The cache lives in the runtime directory and does not survive a reboot. It does not need
+to: at boot udev walks every tty again, and the first port to reach the target refills it.
 
 ## Debug probes
 
@@ -192,9 +259,13 @@ which is what a probe reads.
 - A stale link cannot be detected once the kernel has handed the same node name to
   another device. That case is resolved by the next `publish()` for that port, not by
   `cleanup`.
-- Two ports reporting the same board ID share one link; the last publish wins. The older
-  port keeps the links it still owns, and its state is dropped by the next cleanup once
-  it owns none of them.
+- The descriptor path needs a serial descriptor that is the MAC, which is what the
+  USB-Serial/JTAG peripheral reports. Firmware that brings up a CDC class of its own can
+  put anything there, and such a port goes to `esptool` with the re-enumeration that costs.
+- A claim is only as fresh as the plug event that made it. A board moved from one debug
+  probe to another, both of them still connected, leaves the first probe claiming a target
+  that is no longer on its pins, and that claim can take the board name back when the
+  second probe is unplugged. Only re-triggering the first port corrects it.
 
 See also [Identifier format](identifier-format.md), [Adding a probe](adding-a-probe.md), and
 [Operations](operations.md).

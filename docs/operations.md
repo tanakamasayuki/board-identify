@@ -156,6 +156,28 @@ Three outcomes are expected rather than broken:
   the table on purpose: that pair says what the cable is, not what is behind it. This also
   applies to the Sony Spresense, which claims the stock CP2102 ID as its own.
 
+### A board reachable two ways shows only one name, or none
+
+An ESP32-S3 whose own USB peripheral is plugged in alongside a CH340 on the same UART
+answers on two ports, and both read the same MAC, so both resolve to one board ID. Both
+ports are named:
+
+```bash
+ls -l /run/board-identify/by-id/ | grep esp32-s3-e4b063b4a81c
+# esp32-s3-e4b063b4a81c      -> /dev/ttyUSB2    the preferred path
+# esp32-s3-e4b063b4a81c-uart -> /dev/ttyUSB2    through the CH340
+# esp32-s3-e4b063b4a81c-usb  -> /dev/ttyACM12   the board's own USB
+```
+
+Use a qualified name when you mean a specific path. The unqualified one follows the bridge
+while it is there, because a native USB port re-enumerates whenever the chip resets and
+the name would otherwise disappear on every upload.
+
+If only the `-usb` name is there, nothing has established which chip that MAC belongs to
+yet — `303a:1001` is every ESP32 with a USB-Serial/JTAG. Plug the bridge in once, or wait
+for the one `esptool` run on the native port, and the chip name is recorded in
+`/run/board-identify/variants.json` for every port afterwards.
+
 ### A debug probe that reports the wrong chip
 
 Some tools leave the WCH-Link's readback of its target broken. Observed with probe-rs

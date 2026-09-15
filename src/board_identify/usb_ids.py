@@ -27,7 +27,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from board_identify.arduino_ids import ARDUINO_USB_IDS
-from board_identify.usbinfo import SYSFS_ROOT, usb_device_for_port
+from board_identify.model import TransportKind
+from board_identify.usbinfo import SYSFS_ROOT, UsbDevice, usb_device_for_port
 
 # The family EspressifProbe answers for; see board_for_usb_id() callers.
 ESPRESSIF_FAMILY = "espressif"
@@ -83,6 +84,8 @@ __all__ = [
     "board_for_port",
     "board_for_usb_id",
     "is_generic_bridge",
+    "transport_kind_for_device",
+    "transport_kind_for_port",
 ]
 
 
@@ -133,3 +136,25 @@ def board_for_port(port: Path, sysfs_root: Path = SYSFS_ROOT) -> UsbBoard | None
     if device is None:
         return None
     return board_for_usb_id(device.vid, device.pid)
+
+
+def transport_kind_for_device(device: UsbDevice | None) -> TransportKind:
+    """Whether a port reaches its target through a bridge or through the target itself.
+
+    The same rule that keeps a stock bridge ID from naming a board answers this
+    too, and for the same reason: a pair a vendor bothered to program describes
+    the thing it is soldered to, a stock one describes the cable. A tty with no
+    USB device behind it is a plain UART.
+
+    A debug probe is not decided here. Its vendor programs its own product ID,
+    so this call would place it with the native ports, and the probe that knows
+    it is a probe says so instead.
+    """
+    if device is None:
+        return "uart"
+    return "uart" if is_generic_bridge(device.vid, device.pid) else "usb"
+
+
+def transport_kind_for_port(port: Path, sysfs_root: Path = SYSFS_ROOT) -> TransportKind:
+    """:func:`transport_kind_for_device` for the USB device behind ``port``."""
+    return transport_kind_for_device(usb_device_for_port(port, sysfs_root))

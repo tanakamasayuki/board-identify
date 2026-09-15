@@ -37,6 +37,12 @@ depending on which probe got there first.
   Keep probes ordered from least to most intrusive in `default_probes()`.
 - Every returned `Identification` must describe the port that was passed in; `publish()`
   rejects a mixed set.
+- Set `transport_kind` on every `Identification`, which names the path rather than the
+  board: `uart` for a bridge in front of the target, `usb` for the target's own USB
+  peripheral, `probe` for a debug probe's serial interface. `transport_kind_for_port()`
+  in `usb_ids` decides the first two from sysfs; a probe knows it is one and says so.
+  Leaving it unset costs the port its qualified link and sorts its claim last, so a board
+  reachable two ways loses the name the other port can address it by.
 - Anything that disturbs the target belongs behind `probe_target`, which
   `default_probes()` passes on and `--no-target-probe` turns off. With it off a probe must
   do no more than read descriptors.

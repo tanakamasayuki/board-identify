@@ -3,7 +3,7 @@ from pathlib import Path
 
 from board_identify.cleanup import cleanup
 from board_identify.identify import publish
-from board_identify.model import Identification
+from board_identify.model import Identification, TransportKind
 
 
 def make_port(tmp_path: Path, name: str) -> Path:
@@ -51,6 +51,18 @@ def publish_probe_and_target(runtime_dir: Path, port: Path) -> list[Path]:
             ),
         ],
         runtime_dir=runtime_dir,
+    )
+
+
+def esp32_on(port: Path, transport_kind: TransportKind) -> Identification:
+    """The same ESP32-S3, as seen through one of the two ports onto it."""
+    return Identification(
+        port=port,
+        family="espressif",
+        variant="esp32-s3",
+        unique_id="e4b063b4a81c",
+        id_source="target-mac",
+        transport_kind=transport_kind,
     )
 
 
@@ -104,19 +116,35 @@ def test_broken_state_file_is_removed(tmp_path: Path) -> None:
     assert set(cleanup(runtime_dir=runtime)) == {broken, incomplete}
 
 
-def test_state_pointing_at_a_link_owned_by_another_port_is_dropped(tmp_path: Path) -> None:
+def test_state_of_a_live_port_that_holds_no_link_is_kept(tmp_path: Path) -> None:
     runtime = tmp_path / "run"
     first = make_port(tmp_path, "ttyUSB0")
     second = make_port(tmp_path, "ttyUSB1")
     publish_port(runtime, first)
-    # The same board reappears on ttyUSB1 and takes over the link.
+    # The same board answers on ttyUSB1 too, which takes the shared name over.
     link = publish_port(runtime, second)
 
     removed = cleanup(runtime_dir=runtime)
 
-    assert removed == [runtime / "state" / "ttyUSB0.json"]
-    assert link.is_symlink()
+    assert removed == []
     assert link.readlink() == second
+    # ttyUSB0 is still that board. Its record is a claim rather than a receipt,
+    # and keeping it is what lets the name come back when ttyUSB1 goes away.
+    assert (runtime / "state" / "ttyUSB0.json").exists()
+
+
+def test_a_shared_name_returns_to_the_port_that_still_claims_it(tmp_path: Path) -> None:
+    runtime = tmp_path / "run"
+    first = make_port(tmp_path, "ttyUSB0")
+    second = make_port(tmp_path, "ttyUSB1")
+    publish_port(runtime, first)
+    link = publish_port(runtime, second)
+    second.unlink()
+
+    cleanup(runtime_dir=runtime)
+
+    assert link.readlink() == first
+    assert not (runtime / "state" / "ttyUSB1.json").exists()
 
 
 def test_non_symlink_entries_are_left_alone(tmp_path: Path) -> None:
@@ -165,3 +193,22 @@ def test_live_port_keeps_the_links_it_still_owns(tmp_path: Path) -> None:
     # The first probe is still plugged in, so its own link must survive.
     assert probe.is_symlink()
     assert target.readlink() == second
+
+
+def test_cleanup_hands_a_shared_name_to_the_port_that_is_left(tmp_path: Path) -> None:
+    # An ESP32-S3 reached both through a CH340 and through its own USB
+    # peripheral. The native port goes away without its unit stopping cleanly.
+    runtime = tmp_path / "run"
+    bridge = make_port(tmp_path, "ttyUSB0")
+    native = make_port(tmp_path, "ttyACM12")
+    publish([esp32_on(bridge, "uart")], runtime_dir=runtime)
+    publish([esp32_on(native, "usb")], runtime_dir=runtime)
+    native.unlink()
+
+    cleanup(runtime_dir=runtime)
+
+    links = runtime / "by-id"
+    assert (links / "esp32-s3-e4b063b4a81c").readlink() == bridge
+    assert (links / "esp32-s3-e4b063b4a81c-uart").readlink() == bridge
+    assert not (links / "esp32-s3-e4b063b4a81c-usb").is_symlink()
+    assert not (runtime / "state" / "ttyACM12.json").exists()

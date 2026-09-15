@@ -289,6 +289,7 @@ class WchLinkProbe:
             unique_id=unique_id,
             id_source="transport-serial",
             transport=probe_info.variant if probe_info is not None else None,
+            transport_kind="probe",
             usb_vid=f"{device.vid:04x}",
             usb_pid=f"{device.pid:04x}",
             usb_serial=device.serial,
@@ -317,7 +318,10 @@ class WchLinkProbe:
             variant=variant,
             unique_id=unique_id,
             id_source="target-cpu-id",
+            # Not the board's own USB and not a bare bridge: the tty is the
+            # probe's, and it keeps answering while the target is held or reset.
             transport=probe_info.variant if probe_info is not None else UNKNOWN_VARIANT,
+            transport_kind="probe",
             usb_vid=f"{device.vid:04x}",
             usb_pid=f"{device.pid:04x}",
             usb_serial=device.serial,

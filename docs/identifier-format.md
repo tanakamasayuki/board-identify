@@ -44,6 +44,29 @@ The first follows the board to whichever probe it is plugged into. The second st
 the probe whatever is attached to it, and is published even when nothing is. Use whichever
 one matches what you mean by "that device".
 
+## More than one port for one board
+
+A board reached two ways at once — an ESP32-S3 with its own USB peripheral next to a
+CH340 on the same UART — resolves to the same identifier from both ports, because the
+identifier names the board and not the path to it. Each port therefore also publishes a
+qualified name, which is the board ID with the kind of transport appended:
+
+```text
+<variant>-<unique-id>-<uart|usb|probe>
+```
+
+```text
+esp32-s3-e4b063b4a81c       -> /dev/ttyUSB2   the preferred path
+esp32-s3-e4b063b4a81c-uart  -> /dev/ttyUSB2   through the CH340
+esp32-s3-e4b063b4a81c-usb   -> /dev/ttyACM12  the board's own USB
+```
+
+The qualified name is always published, whether or not anything else claims the board, so
+a script can address one specific path without having to check first. The unqualified name
+goes to the port most likely to still be there — see
+[Two ports, one board](architecture.md#two-ports-one-board) — and moves to the other one
+when that port goes away.
+
 ## Where a variant comes from
 
 | Source | Variant | Unique ID |

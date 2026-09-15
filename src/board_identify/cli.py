@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _identify(args: argparse.Namespace, runtime_dir: Path) -> int:
-    probes = default_probes(probe_target=not args.no_target_probe)
+    probes = default_probes(probe_target=not args.no_target_probe, runtime_dir=runtime_dir)
     try:
         results = identify_port(args.port, probes=probes)
     except FileNotFoundError:
@@ -82,13 +82,20 @@ def _identify(args: argparse.Namespace, runtime_dir: Path) -> int:
         return EXIT_UNIDENTIFIED
 
     links = [] if args.no_publish else publish(results, runtime_dir=runtime_dir)
-    by_board_id = {link.name: link for link in links}
+    by_name = {link.name: link for link in links}
 
     if args.as_json:
         output: dict[str, object] = {
             "port": str(args.port),
             "identifications": [
-                {**result.to_dict(), "link": _link_for(result.board_id, by_board_id)}
+                {
+                    **result.to_dict(),
+                    # "link" is absent when another port onto the same board
+                    # holds the unqualified name; "path_link" is this port's own
+                    # and is always there once something was published.
+                    "link": _link_for(result.board_id, by_name),
+                    "path_link": _link_for(result.path_id, by_name),
+                }
                 for result in results
             ],
         }
@@ -102,6 +109,6 @@ def _identify(args: argparse.Namespace, runtime_dir: Path) -> int:
     return EXIT_OK
 
 
-def _link_for(board_id: str, links: dict[str, Path]) -> str | None:
-    link = links.get(board_id)
+def _link_for(name: str | None, links: dict[str, Path]) -> str | None:
+    link = links.get(name) if name is not None else None
     return str(link) if link is not None else None

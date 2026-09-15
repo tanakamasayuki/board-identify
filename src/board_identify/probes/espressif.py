@@ -1,4 +1,13 @@
-"""Identify Espressif targets by reading the eFuse MAC through esptool."""
+"""Identify Espressif targets by their eFuse MAC, from descriptors or through esptool.
+
+An Espressif chip with its own USB peripheral publishes that MAC as its USB
+serial descriptor, so on such a port the identifier is readable from sysfs. That
+path is taken whenever the chip name behind the MAC is already known, because
+running ``esptool`` on a native-USB port destroys the port: the reset at the end
+of the run re-enumerates the device, and the link published seconds earlier goes
+with it. Every other port still goes to ``esptool``, which is also what fills in
+the chip name the descriptor path needs.
+"""
 
 import os
 import re
@@ -6,10 +15,16 @@ import subprocess
 import sys
 from pathlib import Path
 
-from board_identify.model import Identification
+from board_identify.model import Identification, TransportKind
 from board_identify.normalize import normalize_component, normalize_unique_id
-from board_identify.usb_ids import ESPRESSIF_FAMILY, board_for_port
-from board_identify.usbinfo import SYSFS_ROOT
+from board_identify.paths import RUNTIME_DIR
+from board_identify.usb_ids import ESPRESSIF_FAMILY, board_for_port, transport_kind_for_device
+from board_identify.usbinfo import SYSFS_ROOT, usb_device_for_port
+from board_identify.variants import recall_variant
+
+# Espressif's own vendor ID, which a board reports when the tty is the chip's
+# USB-Serial/JTAG peripheral rather than a bridge in front of it.
+ESPRESSIF_VENDOR_ID = 0x303A
 
 DEFAULT_BAUD = 115200
 DEFAULT_CONNECT_ATTEMPTS = 2
@@ -61,10 +76,12 @@ class EspressifProbe:
         baud: int = DEFAULT_BAUD,
         timeout: float = DEFAULT_TIMEOUT,
         sysfs_root: Path = SYSFS_ROOT,
+        runtime_dir: Path = RUNTIME_DIR,
     ) -> None:
         self.baud = baud
         self.timeout = timeout
         self.sysfs_root = sysfs_root
+        self.runtime_dir = runtime_dir
 
     def supports(self, port: Path) -> bool:
         # Any USB-serial port may hide an Espressif target behind the bridge, so
@@ -82,6 +99,10 @@ class EspressifProbe:
         return board is None or board.family == ESPRESSIF_FAMILY
 
     def identify(self, port: Path) -> list[Identification]:
+        from_descriptors = self.identify_from_descriptors(port)
+        if from_descriptors is not None:
+            return [from_descriptors]
+
         try:
             completed = subprocess.run(
                 [
@@ -108,11 +129,55 @@ class EspressifProbe:
         if completed.returncode != 0:
             return []
 
-        result = self.parse(port, completed.stdout + completed.stderr)
+        kind = transport_kind_for_device(usb_device_for_port(port, self.sysfs_root))
+        result = self.parse(port, completed.stdout + completed.stderr, transport_kind=kind)
         return [] if result is None else [result]
 
+    def identify_from_descriptors(self, port: Path) -> Identification | None:
+        """Name the board from sysfs alone, or None when that is not enough.
+
+        Answers only for a port that is the target's own USB peripheral, whose
+        serial descriptor is the eFuse MAC — the same identifier ``esptool``
+        would read, without the traffic and without the reset. The chip name is
+        not in the descriptors, because every ESP32 with a USB-Serial/JTAG
+        reports ``303a:1001``, so this returns None until something has learned
+        it and the caller falls back to ``esptool``.
+        """
+        device = usb_device_for_port(port, self.sysfs_root)
+        if device is None or device.vid != ESPRESSIF_VENDOR_ID:
+            return None
+        if device.serial is None or not MAC_PATTERN.fullmatch(device.serial):
+            return None
+
+        try:
+            unique_id = normalize_unique_id(device.serial)
+        except ValueError:
+            return None
+
+        variant = recall_variant(unique_id, self.runtime_dir)
+        if variant is None:
+            return None
+
+        return Identification(
+            port=port,
+            family="espressif",
+            variant=variant,
+            unique_id=unique_id,
+            # The MAC is the chip's, not an adapter's, however it was read.
+            id_source="target-mac",
+            transport_kind="usb",
+            usb_vid=f"{device.vid:04x}",
+            usb_pid=f"{device.pid:04x}",
+            usb_serial=device.serial,
+        )
+
     @classmethod
-    def parse(cls, port: Path, output: str) -> Identification | None:
+    def parse(
+        cls,
+        port: Path,
+        output: str,
+        transport_kind: TransportKind | None = None,
+    ) -> Identification | None:
         """Build an Identification from esptool output, or return None."""
         chip = cls.extract_chip(output)
         mac = cls.extract_mac(output)
@@ -131,6 +196,7 @@ class EspressifProbe:
             variant=variant,
             unique_id=unique_id,
             id_source="target-mac",
+            transport_kind=transport_kind,
         )
 
     @staticmethod

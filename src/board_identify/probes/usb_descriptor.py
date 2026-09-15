@@ -16,7 +16,7 @@ from pathlib import Path
 
 from board_identify.model import Identification
 from board_identify.normalize import normalize_unique_id
-from board_identify.usb_ids import UsbBoard, board_for_usb_id
+from board_identify.usb_ids import UsbBoard, board_for_usb_id, transport_kind_for_device
 from board_identify.usbinfo import SYSFS_ROOT, UsbDevice, usb_device_for_port
 
 __all__ = ["UsbDescriptorProbe"]
@@ -54,6 +54,10 @@ class UsbDescriptorProbe:
                 variant=board.variant,
                 unique_id=unique_id,
                 id_source="usb-serial",
+                # A pair only names a board when the vendor programmed it, so
+                # this is the board's own USB rather than a bridge in front of
+                # it; the classifier says the same and is left to say it.
+                transport_kind=transport_kind_for_device(device),
                 usb_vid=f"{device.vid:04x}",
                 usb_pid=f"{device.pid:04x}",
                 usb_serial=device.serial,
