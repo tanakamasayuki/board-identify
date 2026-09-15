@@ -159,20 +159,13 @@ Three outcomes are expected rather than broken:
 ### A board reachable two ways shows only one name, or none
 
 An ESP32-S3 whose own USB peripheral is plugged in alongside a CH340 on the same UART
-answers on two ports, and both read the same MAC, so both resolve to one board ID. Both
-ports are named:
+answers on two ports. Both are named, one each:
 
 ```bash
 ls -l /run/board-identify/by-id/ | grep e4b063b4a81c
-# esp32-s3-e4b063b4a81c      -> /dev/ttyUSB2    the preferred path
-# esp32-s3-e4b063b4a81c-uart -> /dev/ttyUSB2    through the CH340
-# esp32-series-e4b063b4a81c         -> /dev/ttyACM12   the board's own USB
-# esp32-series-e4b063b4a81c-usb     -> /dev/ttyACM12
+# esp32-s3-e4b063b4a81c      -> /dev/ttyUSB2    through the CH340
+# esp32-series-e4b063b4a81c  -> /dev/ttyACM12   the board's own USB
 ```
-
-Use a qualified name when you mean a specific path. The unqualified one follows the bridge
-while it is there, because a native USB port re-enumerates whenever the chip resets and
-the name would otherwise disappear on every upload.
 
 The two names are not equally specific, and that is on purpose. A bridge is opened and
 `esptool` reads the chip; a board's own USB is never opened, because that reboots the board

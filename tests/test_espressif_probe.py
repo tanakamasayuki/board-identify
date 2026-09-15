@@ -189,7 +189,6 @@ def test_a_native_usb_port_is_named_without_being_opened(
     (result,) = probe.identify(Path("/dev/ttyACM12"))
 
     assert result.board_id == "esp32-series-e4b063b4a81c"
-    assert result.path_id == "esp32-series-e4b063b4a81c-usb"
     assert result.id_source == "usb-serial"
     assert result.transport_kind == "usb"
 
@@ -253,8 +252,8 @@ def test_a_bridge_port_is_opened(
     (result,) = probe.identify(Path("/dev/ttyUSB0"))
 
     assert calls
+    assert result.board_id == "esp32-s3-7cdfa1123456"
     assert result.transport_kind == "uart"
-    assert result.path_id == "esp32-s3-7cdfa1123456-uart"
 
 
 def test_no_target_probe_stops_esptool_everywhere(
@@ -282,6 +281,19 @@ def test_a_serial_that_is_not_a_mac_is_not_an_identifier(sysfs: Sysfs) -> None:
     root = sysfs(
         port_name="ttyACM12",
         attributes={**NATIVE_USB, "serial": "1234"},
+        interface="3-7:1.0",
+    )
+
+    probe = EspressifProbe(sysfs_root=root)
+    assert probe.native_usb_unique_id(Path("/dev/ttyACM12")) is None
+
+
+def test_an_esp32_s2_reports_no_usable_serial(sysfs: Sysfs) -> None:
+    # The S2 answers from a USB-OTG peripheral rather than a USB-Serial/JTAG:
+    # 303a:0002, and a serial descriptor of a constant 0 that every S2 shares.
+    root = sysfs(
+        port_name="ttyACM12",
+        attributes={**NATIVE_USB, "idProduct": "0002", "serial": "0"},
         interface="3-7:1.0",
     )
 

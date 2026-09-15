@@ -17,8 +17,8 @@ most specific first, and each one becomes its own link to the same port.
 One board can be reachable through more than one port, which is the same thing from the
 other side. An ESP32-S3 with its own USB peripheral wired up next to a CH340 on the same
 UART answers on two ports at once. Each identification therefore also carries the **kind**
-of transport it came through — `uart`, `usb` or `probe` — and publishes a qualified link of
-its own, so one path can be addressed without the other. See
+of transport it came through — `uart`, `usb` or `probe` — which is not part of any name but
+decides which port keeps the board's name when two of them want it. See
 [Two ports, one board](#two-ports-one-board).
 
 The publisher creates one atomic symlink per identification in
@@ -46,13 +46,9 @@ port name.
 /run/board-identify/
 ├── by-id/
 │   ├── esp32-s3-7cdfa1123456 -> /dev/ttyUSB2
-│   ├── esp32-s3-7cdfa1123456-uart -> /dev/ttyUSB2
 │   ├── esp32-series-7cdfa1123456 -> /dev/ttyACM12
-│   ├── esp32-series-7cdfa1123456-usb -> /dev/ttyACM12
 │   ├── ch32x035c8t6-1ff9abcd880ebc48 -> /dev/ttyACM4
-│   ├── ch32x035c8t6-1ff9abcd880ebc48-probe -> /dev/ttyACM4
-│   ├── wch-link-fc928f068181 -> /dev/ttyACM4
-│   └── wch-link-fc928f068181-probe -> /dev/ttyACM4
+│   └── wch-link-fc928f068181 -> /dev/ttyACM4
 └── state/
     ├── ttyACM4.json
     ├── ttyACM12.json
@@ -78,17 +74,15 @@ reader never observes a partial link or a half-written state file.
 
 ## Two ports, one board
 
-A board ID names the board. It says nothing about how the host reaches it, which is
-deliberate — the whole point is that the name survives a re-attach — but it leaves a board
-on two ports with nothing that tells the two apart. The qualified name closes that gap:
-`<board-id>-<transport kind>` belongs to a single port, so a script that means *the CH340
-in front of this ESP32-S3* can say so, and a script that just means *this board* uses the
-unqualified name. Every identification publishes both, so a specific path can always be
-named without checking what else is plugged in.
+A board ID names the board and not the way the host reaches it, which is deliberate: that
+is what lets the name survive a re-attach. It also means two ports onto one chip can
+arrive at the same name, and only one of them can hold the link.
 
-Two ports can also arrive at the *same* board ID, and then only one of them can hold it —
-two bridges onto one chip, or a bridge beside a native port that `--probe-native-usb`
-opened. The unqualified name goes to the preferred claimant:
+Most of the time they do not. The paths differ in how much they can find out — a bridge is
+opened and `esptool` reads the chip, the board's own USB is not opened and stops at the
+series — so they arrive at different names and each gets its own link. The ports that do
+collide are two bridges onto one chip, and a bridge beside a native port that
+`--probe-native-usb` opened. The name then goes to the preferred claimant:
 
 | Kind | | Why |
 | --- | --- | --- |
@@ -98,24 +92,22 @@ opened. The unqualified name goes to the preferred claimant:
 
 A name pinned to a native USB port would blink out on every reset and every upload, so
 the bridge wins. Between two claims of the same kind the more recent one wins, and the
-port name breaks a remaining tie, so the answer never depends on the order events arrived
-in. The qualified names stay valid either way; this only decides which link is the
-convenient one.
+port name breaks a remaining tie, so the answer never depends on the order the events
+arrived in.
 
-A state file is therefore a **claim** and not a receipt. A port that lost the shared name
-to another port keeps its record, which is what lets the name come back when the holder
-goes away: `settle()` re-points the unqualified link at the best remaining live claimant,
-and removes it only when nothing claims the board any more. `publish()`, `remove_port()`
-and `cleanup()` all end by settling every name they touched.
+A state file is therefore a **claim** and not a receipt. A port that lost the name to
+another port keeps its record, which is what lets the name come back when the holder goes
+away: `settle()` re-points the link at the best remaining live claimant, and removes it
+only when nothing claims the board any more. `publish()`, `remove_port()` and `cleanup()`
+all end by settling every name they touched.
 
 ## Lifecycle
 
 1. udev sees a new `ttyUSB*` or `ttyACM*` node and starts `board-identify@<port>.service`.
 2. `identify_port()` asks each probe whether it supports the port, then to identify it.
-3. `publish()` writes the state file first, then one qualified link per identification,
-   then settles each unqualified name. A name the port claimed last time but not this
-   time is released first, so a target unplugged from its debug probe does not leave a
-   link behind.
+3. `publish()` writes the state file first, then settles the name of each identification.
+   A name the port claimed last time but not this time is released first, so a target
+   unplugged from its debug probe does not leave a link behind.
 4. When the device disappears, the unit is stopped through `BindsTo=`, and its
    `ExecStop=` runs `board-identify remove <port>`.
 5. `board-identify cleanup` additionally sweeps links and state that were left behind,
@@ -185,7 +177,7 @@ link, and the re-enumeration starts the whole thing over. Left alone it does not
 So such a port is named from its descriptors and nothing else, which stops at the series:
 
 ```text
-esp32-series-30eda0e31478-usb -> /dev/ttyACM10
+esp32-series-30eda0e31478 -> /dev/ttyACM10
 ```
 
 `esp32-series` and not `esp32`, because `esp32` is what `esptool` calls the original ESP32.
@@ -196,6 +188,15 @@ A series is a coarse name and a complete one. What a stable link needs is to be 
 to stay put, and the MAC delivers both; the chip name is a description of the board, not
 its identity. Nothing will refine it afterwards either, because nothing opens the port, so
 a board named here keeps that name for good.
+
+The rest of the descriptors were checked and do not narrow it further. Espressif documents
+[what each chip reports](https://docs.espressif.com/projects/esp-iot-solution/en/latest/usb/usb_overview/usb_device_const_COM.html):
+the product ID is `0x1001` for every chip with a USB-Serial/JTAG, and `bcdDevice` splits
+them into two groups and no further — `v1.01` is the S3 or the C3, `v1.02` is the C5, C6,
+C61, H2 or P4. Neither field names one chip, so neither can be used for a name. The same
+table is what says the serial descriptor is the MAC on these chips; the ESP32-S2 is the
+exception twice over, reporting `0x0002` from a USB-OTG peripheral with a constant `0` for
+a serial number, which is not an identifier at all and is rejected as one.
 
 The same board reached through a bridge is named `esp32-p4-30eda0e31478`, because
 `esptool` does read the chip there. One board can therefore carry two names, one per path,
@@ -280,11 +281,14 @@ which is what a probe reads.
 - A stale link cannot be detected once the kernel has handed the same node name to
   another device. That case is resolved by the next `publish()` for that port, not by
   `cleanup`.
-- A port that is the target's own USB peripheral carries half of its own name — the MAC
-  is in the serial descriptor — and cannot supply the other half without being opened, so
-  it stays unnamed unless `--probe-native-usb` is passed. Firmware that brings up a CDC
-  class of its own rather than the USB-Serial/JTAG peripheral does not even report the
-  MAC, so such a port has nothing readable at all.
+- A port that is the target's own USB peripheral is named from the series rather than from
+  the chip. `303a:1001` and `bcdDevice` narrow an ESP32 to a group and no further, and the
+  port is not opened to settle it, so the same board reached through a bridge carries the
+  more specific name of the two. The shared MAC is what says they are one board.
+- A native port whose serial descriptor is not a MAC cannot be named at all. The ESP32-S2
+  is the standing example: it answers from a USB-OTG peripheral and reports a constant `0`
+  that every S2 shares. Firmware that brings up a CDC class of its own is the other, and
+  `--probe-native-usb` is the only thing that reaches either.
 - A claim is only as fresh as the plug event that made it. A board moved from one debug
   probe to another, both of them still connected, leaves the first probe claiming a target
   that is no longer on its pins, and that claim can take the board name back when the

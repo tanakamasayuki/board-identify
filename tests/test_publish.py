@@ -258,31 +258,19 @@ def esp32_on(port: Path, transport_kind: TransportKind) -> Identification:
     )
 
 
-def test_publish_names_the_path_as_well_as_the_board(tmp_path: Path) -> None:
-    port = make_port(tmp_path, "ttyUSB0")
-
-    links = publish([esp32_on(port, "uart")], runtime_dir=tmp_path)
-
-    assert [link.name for link in links] == [
-        "esp32-s3-e4b063b4a81c-uart",
-        "esp32-s3-e4b063b4a81c",
-    ]
-    assert {link.readlink() for link in links} == {port}
-
-
-def test_two_ports_onto_one_chip_keep_a_name_each(tmp_path: Path) -> None:
-    # An ESP32-S3 with its own USB peripheral wired up alongside a CH340 on the
-    # same UART. Both ports read the same MAC, so both resolve to one board ID.
+def test_two_ports_onto_one_chip_share_one_link(tmp_path: Path) -> None:
+    # A board reached through a bridge and through its own USB at once, with
+    # both ports reading the same MAC, so both resolve to one board ID. The
+    # bridge stays enumerated while the target resets, so it keeps the name
+    # whichever port was published last.
     bridge = make_port(tmp_path, "ttyUSB0")
     native = make_port(tmp_path, "ttyACM12")
     publish([esp32_on(bridge, "uart")], runtime_dir=tmp_path)
-    publish([esp32_on(native, "usb")], runtime_dir=tmp_path)
+    published = publish([esp32_on(native, "usb")], runtime_dir=tmp_path)
 
     links = tmp_path / "by-id"
-    assert (links / "esp32-s3-e4b063b4a81c-uart").readlink() == bridge
-    assert (links / "esp32-s3-e4b063b4a81c-usb").readlink() == native
-    # The bridge stays enumerated while the target resets, so it holds the
-    # unqualified name whichever port was published last.
+    assert published == []
+    assert [path.name for path in links.iterdir()] == ["esp32-s3-e4b063b4a81c"]
     assert (links / "esp32-s3-e4b063b4a81c").readlink() == bridge
 
 
@@ -305,10 +293,7 @@ def test_removing_the_native_port_leaves_the_board_named(tmp_path: Path) -> None
 
     assert remove_port("ttyACM12", runtime_dir=tmp_path)
 
-    links = tmp_path / "by-id"
-    assert (links / "esp32-s3-e4b063b4a81c").readlink() == bridge
-    assert (links / "esp32-s3-e4b063b4a81c-uart").readlink() == bridge
-    assert not (links / "esp32-s3-e4b063b4a81c-usb").is_symlink()
+    assert (tmp_path / "by-id" / "esp32-s3-e4b063b4a81c").readlink() == bridge
 
 
 def test_the_board_name_moves_to_the_port_that_is_left(tmp_path: Path) -> None:
@@ -319,10 +304,7 @@ def test_the_board_name_moves_to_the_port_that_is_left(tmp_path: Path) -> None:
 
     assert remove_port("ttyUSB0", runtime_dir=tmp_path)
 
-    links = tmp_path / "by-id"
-    assert (links / "esp32-s3-e4b063b4a81c").readlink() == native
-    assert (links / "esp32-s3-e4b063b4a81c-usb").readlink() == native
-    assert not (links / "esp32-s3-e4b063b4a81c-uart").is_symlink()
+    assert (tmp_path / "by-id" / "esp32-s3-e4b063b4a81c").readlink() == native
 
 
 def test_the_last_port_to_go_takes_the_name_with_it(tmp_path: Path) -> None:

@@ -22,12 +22,11 @@ serial number identifies the adapter, not necessarily the board behind it. A deb
 is both at once, so it gets a link of its own next to the one for its target.
 
 One board can also answer on two ports at once — an ESP32-S3 with its own USB peripheral
-alongside a CH340 on the same UART — so every link is published twice: once under the
-board's name, and once with the transport appended, which addresses one specific path.
+alongside a CH340 on the same UART — and each port gets its own name:
 
 ```text
-/run/board-identify/by-id/esp32-s3-e4b063b4a81c-uart     -> /dev/ttyUSB2
-/run/board-identify/by-id/esp32-series-e4b063b4a81c-usb         -> /dev/ttyACM12
+/run/board-identify/by-id/esp32-s3-e4b063b4a81c          -> /dev/ttyUSB2
+/run/board-identify/by-id/esp32-series-e4b063b4a81c      -> /dev/ttyACM12
 ```
 
 A board's own USB is never opened, because that reboots it and takes the port down. Its
@@ -305,8 +304,7 @@ See [`docs/operations.md`](docs/operations.md) for details and troubleshooting.
 1. Inspect the serial device and USB metadata.
 2. Run target-specific probes when needed.
 3. Generate `<variant>-<unique-id>` for every identity the port has.
-4. Atomically publish that name with the transport appended, which belongs to this port,
-   and settle the bare name on the best port claiming it, under
+4. Settle each name on the best port claiming it, as an atomic symlink under
    `/run/board-identify/by-id/`.
 5. Store current state under `/run/board-identify/state/`.
 

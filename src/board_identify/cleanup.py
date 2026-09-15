@@ -2,13 +2,7 @@
 
 from pathlib import Path
 
-from board_identify.identify import (
-    link_points_to,
-    path_link_names,
-    read_state,
-    settle,
-    state_board_ids,
-)
+from board_identify.identify import link_points_to, read_state, settle, state_board_ids
 from board_identify.paths import RUNTIME_DIR, by_id_dir, state_dir
 
 __all__ = ["cleanup"]
@@ -46,10 +40,9 @@ def cleanup(runtime_dir: Path = RUNTIME_DIR) -> list[Path]:
                 continue
 
             for board_id in board_ids:
-                for name in (board_id, *path_link_names(board_id)):
-                    if link_points_to(links / name, Path(port)):
-                        (links / name).unlink(missing_ok=True)
-                        removed.append(links / name)
+                if link_points_to(links / board_id, Path(port)):
+                    (links / board_id).unlink(missing_ok=True)
+                    removed.append(links / board_id)
             state_path.unlink(missing_ok=True)
             removed.append(state_path)
 

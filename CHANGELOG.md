@@ -1,8 +1,6 @@
 # Changelog / 変更履歴
 
 ## Unreleased
-- (EN) Publish a transport-qualified link, `<board-id>-<uart|usb|probe>`, alongside the board name, so a board reachable through both a USB-UART bridge and its own USB peripheral is addressable path by path
-- (JA) ボード名と並んでトランスポート付きのリンク `<board-id>-<uart|usb|probe>` を公開し、USB-UART ブリッジとオンボードのネイティブ USB の両方で到達できるボードを経路ごとに指定できるようにした
 - (EN) Hand the shared board name to the port most likely to still be there, and back to the port that still claims it when the holder disappears, instead of leaving the board nameless
 - (JA) 共有されるボード名は、より残っていそうなポートが受け取り、保持していたポートが消えたときは、まだそれを名乗っているポートへ戻すようにした。以前はボードが名無しになっていた
 - (EN) Keep the state of a live port that holds no link, because it is a claim on the board rather than a receipt for a link

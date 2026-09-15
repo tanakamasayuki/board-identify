@@ -19,7 +19,6 @@ __all__ = [
     "claims",
     "default_probes",
     "identify_port",
-    "path_link_names",
     "publish",
     "read_state",
     "remove_port",
@@ -200,18 +199,12 @@ def settle(board_id: str, runtime_dir: Path = RUNTIME_DIR) -> Path | None:
     return link
 
 
-def path_link_names(board_id: str) -> tuple[str, ...]:
-    """Every qualified name a board ID can be published under, one per transport."""
-    return tuple(f"{board_id}-{kind}" for kind in TRANSPORT_PREFERENCE)
-
-
 def publish(results: list[Identification], runtime_dir: Path = RUNTIME_DIR) -> list[Path]:
     """Publish the links for one port plus its state file, and return the links.
 
-    Each identification gets a qualified link naming the path it was reached
-    through, which belongs to this port alone. The unqualified board name is
-    shared with any other port onto the same silicon, so it is settled rather
-    than written: it may stay with a port that is already holding it.
+    A board name can be claimed by more than one port at a time, so the links
+    are settled rather than written: one may stay with a port that already holds
+    it, and this port then publishes nothing for that board.
     """
     # The link name is the key, so two identifications that agree on it are one.
     by_board_id = {result.board_id: result for result in results}
@@ -243,17 +236,15 @@ def publish(results: list[Identification], runtime_dir: Path = RUNTIME_DIR) -> l
         settle(board_id, runtime_dir)
 
     published: list[Path] = []
-    for result in by_board_id.values():
-        if result.path_id is not None:
-            published.append(_write_link(links / result.path_id, port))
-        link = settle(result.board_id, runtime_dir)
+    for board_id in by_board_id:
+        link = settle(board_id, runtime_dir)
         if link is not None and link_points_to(link, port):
             published.append(link)
     return published
 
 
 def remove_port(port_name: str, runtime_dir: Path = RUNTIME_DIR) -> bool:
-    """Drop the state of a port and the links it held, unqualified names included.
+    """Drop the state of a port and the links it held.
 
     A name this port shared with another live port is handed over rather than
     removed.
@@ -288,11 +279,10 @@ def _preference(kind: TransportKind | None) -> int:
 
 
 def _release(board_id: str, port: Path, links: Path) -> None:
-    """Drop every link this port holds for a board it no longer claims."""
-    for name in (board_id, *path_link_names(board_id)):
-        link = links / name
-        if link_points_to(link, port):
-            link.unlink(missing_ok=True)
+    """Drop the link this port holds for a board it no longer claims."""
+    link = links / board_id
+    if link_points_to(link, port):
+        link.unlink(missing_ok=True)
 
 
 def link_points_to(link: Path, port: Path) -> bool:

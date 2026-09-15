@@ -12,11 +12,10 @@ IdSource = Literal[
     "unknown",
 ]
 
-# How the host reaches the board through this port. One board can be reachable
-# more than one way at once — an ESP32-S3 with its own USB peripheral wired up
-# alongside a CH340 on the same UART is the everyday case — and the two ports
-# then resolve to the same board ID. The kind is what tells the resulting links
-# apart, so each path stays addressable by name.
+# How the host reaches the board through this port. It is not part of a name:
+# it decides which port keeps the board's name while several of them hold the
+# board at once, because a bridge stays enumerated across a target reset and the
+# target's own USB does not. See TRANSPORT_PREFERENCE in board_identify.identify.
 TransportKind = Literal[
     # The target's own USB peripheral, such as an ESP32-S3 USB-Serial/JTAG or a
     # native-USB Arduino board.
@@ -59,23 +58,13 @@ class Identification:
         """Stable name published under ``by-id/``.
 
         Names the board, not the way it is reached, so two ports onto the same
-        silicon produce the same value. See :attr:`path_id` for the other half.
+        silicon can produce the same value and share one link.
         """
         return f"{self.variant}-{self.unique_id}"
-
-    @property
-    def path_id(self) -> str | None:
-        """Name that addresses the board through *this* port specifically.
-
-        None when the probe did not say which kind of transport this is, which
-        leaves the board with its unqualified name alone.
-        """
-        return None if self.transport_kind is None else f"{self.board_id}-{self.transport_kind}"
 
     def to_dict(self) -> dict[str, str | None]:
         """JSON-serialisable view, including the derived ``board_id``."""
         data: dict[str, str | None] = asdict(self)
         data["port"] = str(self.port)
         data["board_id"] = self.board_id
-        data["path_id"] = self.path_id
         return data

@@ -207,8 +207,5 @@ def test_cleanup_hands_a_shared_name_to_the_port_that_is_left(tmp_path: Path) ->
 
     cleanup(runtime_dir=runtime)
 
-    links = runtime / "by-id"
-    assert (links / "esp32-s3-e4b063b4a81c").readlink() == bridge
-    assert (links / "esp32-s3-e4b063b4a81c-uart").readlink() == bridge
-    assert not (links / "esp32-s3-e4b063b4a81c-usb").is_symlink()
+    assert (runtime / "by-id" / "esp32-s3-e4b063b4a81c").readlink() == bridge
     assert not (runtime / "state" / "ttyACM12.json").exists()

@@ -47,28 +47,22 @@ one matches what you mean by "that device".
 ## More than one port for one board
 
 A board reached two ways at once — an ESP32-S3 with its own USB peripheral next to a
-CH340 on the same UART — resolves to the same identifier from both ports, because the
-identifier names the board and not the path to it. Each port therefore also publishes a
-qualified name, which is the board ID with the kind of transport appended:
+CH340 on the same UART — is named once per port:
 
 ```text
-<variant>-<unique-id>-<uart|usb|probe>
+esp32-s3-e4b063b4a81c      -> /dev/ttyUSB2   through the CH340
+esp32-series-e4b063b4a81c  -> /dev/ttyACM12  the board's own USB
 ```
 
-```text
-esp32-s3-e4b063b4a81c-uart  -> /dev/ttyUSB2   through the CH340
-esp32-series-e4b063b4a81c-usb      -> /dev/ttyACM12  the board's own USB
-```
+The two are not equally specific, and that is what tells them apart. A bridge is opened
+and `esptool` reads the chip; the board's own USB is not opened at all, so it is named
+from the descriptors, which carry the MAC but not the chip — hence `esp32-series`, saying
+the chip is unconfirmed rather than borrowing `esp32`, the name of the original one.
 
-The qualified name is always published, whether or not anything else claims the board, so
-a script can address one specific path without having to check first.
-
-How specific the two are can differ. A bridge is opened and `esptool` reads the chip; the
-board's own USB is not opened at all, so it is named from the descriptors, which carry the
-MAC but not the chip — hence `esp32-series`, which says the chip is unconfirmed instead of
-borrowing `esp32`, the name of the original one. The MAC is what makes either name unique,
-so both are stable names for the same board. When two ports do land on one board ID, only one of them can hold the
-unqualified form; see [Two ports, one board](architecture.md#two-ports-one-board).
+The MAC is what makes either name unique, so both are stable names, and the shared MAC is
+what says they are one board. Two ports can still land on the *same* name, and then only
+one of them holds the link; see
+[Two ports, one board](architecture.md#two-ports-one-board).
 
 ## Where a variant comes from
 

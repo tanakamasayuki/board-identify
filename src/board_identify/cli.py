@@ -102,14 +102,9 @@ def _identify(args: argparse.Namespace, runtime_dir: Path) -> int:
         output: dict[str, object] = {
             "port": str(args.port),
             "identifications": [
-                {
-                    **result.to_dict(),
-                    # "link" is absent when another port onto the same board
-                    # holds the unqualified name; "path_link" is this port's own
-                    # and is always there once something was published.
-                    "link": _link_for(result.board_id, by_name),
-                    "path_link": _link_for(result.path_id, by_name),
-                }
+                # "link" is absent when another port onto the same board is
+                # holding that name.
+                {**result.to_dict(), "link": _link_for(result.board_id, by_name)}
                 for result in results
             ],
         }
