@@ -128,7 +128,7 @@ def test_identify_returns_nothing_on_timeout(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_identify_parses_successful_run(
-    monkeypatch: pytest.MonkeyPatch, esptool_output: Output
+    monkeypatch: pytest.MonkeyPatch, esptool_output: Output, tmp_path: Path
 ) -> None:
     def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(
@@ -136,7 +136,7 @@ def test_identify_parses_successful_run(
         )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    results = EspressifProbe().identify(Path("/dev/ttyACM0"))
+    results = EspressifProbe(sysfs_root=tmp_path).identify(Path("/dev/ttyACM0"))
     assert [result.board_id for result in results] == ["esp32-s3-7cdfa1123456"]
 
 

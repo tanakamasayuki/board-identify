@@ -138,10 +138,20 @@ sudo .venv/bin/board-identify identify --no-target-probe /dev/ttyACM4
 
 The target link is named as specifically as the chip can be pinned down —
 `ch32x035c8t6` rather than `ch32x035` when the signature is one this tool has a part
-number for. Chip signatures are transcribed from
-[probe-rs](https://github.com/probe-rs/probe-rs) and
-[ch32fun](https://github.com/cnlohr/ch32fun); a signature neither of them lists falls
-back to the series, and then to raw hex.
+number for. CH32 device IDs and series names are generated from
+[ch32-device-data](https://github.com/ch32-riscv-ug/ch32-device-data).
+Shared IDs resolve to the series; unknown IDs fall back to the series or shared
+peripheral family, then to raw hex.
+
+Update the CH32 table with `python scripts/generate_wch_chips.py`. This fetches
+upstream HEAD and reads `index/device_ids.csv` and `index/parts.csv` from that same
+commit. Use `--revision <full-commit-SHA>` for a reproducible update. Identification
+uses the committed table and needs no network access or local upstream checkout.
+
+The `Update CH32 device data` GitHub Actions workflow runs weekly (Monday, 09:23
+JST) and on manual dispatch. It opens or updates a PR after the checks pass.
+Enable “Allow GitHub Actions to create and approve pull requests” in the
+repository’s Actions settings for PR creation.
 
 RISC-V mode (`1a86:8010`, `1a86:8012`) is what the target step needs. In ARM mode
 (`1a86:8011`) the probe speaks CMSIS-DAP instead, so only the probe itself is named.

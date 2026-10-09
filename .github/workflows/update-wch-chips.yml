@@ -1,0 +1,52 @@
+name: Update CH32 device data
+
+on:
+  schedule:
+    - cron: '23 0 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-wch-chips
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install the project
+        run: uv sync --frozen
+
+      - name: Fetch upstream HEAD and generate the table
+        run: uv run --frozen python scripts/generate_wch_chips.py
+
+      - name: Check the update
+        run: |
+          uv run --frozen pytest
+          uv run --frozen ruff check .
+          uv run --frozen ruff format --check .
+          uv run --frozen mypy src tests
+
+      - name: Create or update the data PR
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: automation/ch32-device-data
+          add-paths: src/board_identify/probes/wch_chips_data.py
+          commit-message: Update CH32 identification data
+          title: Update CH32 identification data
+          body: |
+            Regenerate the CH32 identification table from the latest
+            [ch32-device-data](https://github.com/ch32-riscv-ug/ch32-device-data) HEAD.
+            Both input tables use the same commit, recorded in the generated module.
+
+            Validation: pytest, Ruff lint and format, and mypy.
