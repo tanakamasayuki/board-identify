@@ -1,6 +1,12 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Identify CH32V205RCT6 and CH32X315MCU6 by their device IDs, ignoring silicon revision bits
+- (JA) シリコンリビジョンのビットを除いてデバイス ID を照合し、CH32V205RCT6 と CH32X315MCU6 を型番まで識別
+- (EN) Generate chip and series names from ch32-device-data instead of probe-rs and minichlink; shared IDs resolve to the series, and parts absent from the data fall back to the raw signature
+- (JA) チップ名・シリーズ名の取得元を probe-rs と minichlink から ch32-device-data に統一。同じ ID に複数型番がある場合はシリーズ名まで識別し、データにないチップは生のシグネチャ表記へフォールバック
+- (EN) Check upstream CH32 data weekly with GitHub Actions and open an update PR after validation; fetch both input tables from the same upstream commit without relying on a local checkout
+- (JA) GitHub Actions で CH32 の元データを毎週確認し、検査を通過した更新を PR にする。同じ上流コミットから入力テーブルを取得し、ローカルクローンに依存しない
 - (EN) Hand the shared board name to the port most likely to still be there, and back to the port that still claims it when the holder disappears, instead of leaving the board nameless
 - (JA) 共有されるボード名は、より残っていそうなポートが受け取り、保持していたポートが消えたときは、まだそれを名乗っているポートへ戻すようにした。以前はボードが名無しになっていた
 - (EN) Keep the state of a live port that holds no link, because it is a claim on the board rather than a receipt for a link
