@@ -145,7 +145,8 @@ peripheral family, then to raw hex.
 
 Update the CH32 table with `python scripts/generate_wch_chips.py`. This fetches
 upstream HEAD and reads `index/device_ids.csv` and `index/parts.csv` from that same
-commit. Use `--revision <full-commit-SHA>` for a reproducible update. Identification
+commit. Use `--revision <full-commit-SHA>` for a reproducible update. The committed
+table is left unchanged when only the upstream revision differs. Identification
 uses the committed table and needs no network access or local upstream checkout.
 
 The `Update CH32 device data` GitHub Actions workflow runs weekly (Monday, 09:23

@@ -4,7 +4,8 @@
     python scripts/generate_wch_chips.py
 
 The default fetches the latest upstream HEAD. --revision pins a commit.
-The generated module is committed and used offline at runtime.
+The generated module is committed and used offline at runtime. An existing
+module is kept when only the source revision would change.
 """
 
 import argparse
@@ -98,6 +99,10 @@ def generate(revision: str, parts_csv: str, ids_csv: str) -> str:
     return "\n".join(lines)
 
 
+def without_revision(content: str) -> str:
+    return re.sub(r"^Source revision: .*$", "", content, count=1, flags=re.MULTILINE)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--revision", help="Full upstream commit SHA; defaults to latest HEAD")
@@ -113,6 +118,10 @@ def main() -> None:
     parts_csv = fetch(revision, "index/parts.csv")
     ids_csv = fetch(revision, "index/device_ids.csv")
     content = generate(revision, parts_csv, ids_csv)
+    if args.output.exists():
+        current = args.output.read_text(encoding="utf-8")
+        if without_revision(current) == without_revision(content):
+            return
     args.output.write_text(content, encoding="utf-8")
 
 

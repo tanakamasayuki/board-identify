@@ -96,7 +96,7 @@ sudo .venv/bin/board-identify identify --no-target-probe /dev/ttyACM4
 
 ターゲットのリンク名は、チップを特定できる範囲でできるだけ細かくなります。型番のわかるシグネチャなら `ch32x035` ではなく `ch32x035c8t6` です。CH32 のデバイス ID とシリーズ名は [ch32-device-data](https://github.com/ch32-riscv-ug/ch32-device-data) から生成しています。同じ ID に複数型番がある場合はシリーズ名まで、未登録 ID はシリーズまたは共通の周辺回路 family、さらに生の 16 進へフォールバックします。
 
-CH32 テーブルは `python scripts/generate_wch_chips.py` で更新します。GitHub の最新 HEAD を確定し、その同じコミットの `index/device_ids.csv` と `index/parts.csv` を取得します。`--revision <完全なコミットSHA>` で取得版を指定できます。識別時は同梱テーブルを使い、ネットワークや元データのローカルクローンは不要です。
+CH32 テーブルは `python scripts/generate_wch_chips.py` で更新します。GitHub の最新 HEAD を確定し、その同じコミットの `index/device_ids.csv` と `index/parts.csv` を取得します。`--revision <完全なコミットSHA>` で取得版を指定できます。テーブル内容が同じで上流のコミットだけが異なる場合、ファイルは更新しません。識別時は同梱テーブルを使い、ネットワークや元データのローカルクローンは不要です。
 
 GitHub Actions の `Update CH32 device data` は毎週月曜 09:23（日本時間）と手動実行で更新し、検査を通過した差分を PR にします。PR 作成には、リポジトリの Actions 設定で「Allow GitHub Actions to create and approve pull requests」を有効にします。
 

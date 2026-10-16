@@ -73,3 +73,19 @@ def test_update_fetches_both_inputs_from_remote_head(
     generator.main()
     assert fetched == [(revision, "index/parts.csv"), (revision, "index/device_ids.csv")]
     assert f"Source revision: {revision}" in output.read_text()
+
+
+def test_update_keeps_output_when_only_revision_changes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    output = tmp_path / "table.py"
+    current = generator.generate("a" * 40, PARTS, IDS)
+    output.write_text(current)
+    monkeypatch.setattr(
+        generator, "fetch", lambda commit, path: PARTS if path == "index/parts.csv" else IDS
+    )
+    monkeypatch.setattr(
+        "sys.argv", ["generate_wch_chips.py", "--revision", "b" * 40, "--output", str(output)]
+    )
+    generator.main()
+    assert output.read_text() == current
