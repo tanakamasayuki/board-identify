@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 1.0.1
 - (EN) Only offer a port to `esptool` when an ESP32 can be behind it — a stock USB-UART bridge, Espressif's vendor ID, or a pair the table attributes to an ESP32 — instead of every pair nobody lists, which kept reaching WCH-LinkE and TinyUSB devices
 - (JA) `esptool` の対象を、ESP32 がその先にいうるポート（汎用 USB-UART ブリッジ、Espressif のベンダ ID、テーブルが ESP32 と判定した組み合わせ）に限定した。以前はどこにも載っていない組み合わせをすべて対象にしており、WCH-LinkE や TinyUSB デバイスにも及んでいた
 - (EN) Identify CH32V205RCT6 and CH32X315MCU6 by their device IDs, ignoring silicon revision bits
