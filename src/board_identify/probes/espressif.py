@@ -26,7 +26,7 @@ from pathlib import Path
 
 from board_identify.model import Identification, TransportKind
 from board_identify.normalize import normalize_component, normalize_unique_id
-from board_identify.usb_ids import ESPRESSIF_FAMILY, board_for_port, transport_kind_for_device
+from board_identify.usb_ids import board_for_usb_id, is_generic_bridge, transport_kind_for_device
 from board_identify.usbinfo import SYSFS_ROOT, usb_device_for_port
 
 # Espressif's own vendor ID, which a board reports when the tty is the chip's
@@ -104,19 +104,24 @@ class EspressifProbe:
         self.probe_native_usb = probe_native_usb
 
     def supports(self, port: Path) -> bool:
-        # Any USB-serial port may hide an Espressif target behind the bridge, so
-        # this is a cheap pre-filter rather than a positive match.
         if not port.name.startswith(("ttyUSB", "ttyACM")):
             return False
 
-        # Unless the descriptors say otherwise. A board definition that claims
-        # this VID/PID for another family settles it from sysfs, which saves the
-        # connect attempt and, more to the point, saves the reset it costs a
-        # board that was never going to answer. An unknown pair, and a stock
-        # USB-UART bridge shared across families, both leave the question open,
-        # so those still go to esptool.
-        board = board_for_port(port, self.sysfs_root)
-        return board is None or board.family == ESPRESSIF_FAMILY
+        # Only a port an Espressif target can actually be behind. That is a stock
+        # USB-UART bridge, which hides boards of every family, or a port whose
+        # descriptors point at Espressif: its own vendor ID, or a pair a board
+        # definition attributes to an ESP32. Anything else has programmed its own
+        # VID/PID for something that is not an ESP32 — a WCH-LinkE, a TinyUSB
+        # device, an unknown vendor's board — and asking it would only cost the
+        # reset of a board that was never going to answer.
+        device = usb_device_for_port(port, self.sysfs_root)
+        if device is None:
+            # No descriptors to rule anything out: a plain UART.
+            return True
+        if is_generic_bridge(device.vid, device.pid) or device.vid == ESPRESSIF_VENDOR_ID:
+            return True
+        board = board_for_usb_id(device.vid, device.pid)
+        return board is not None and board.is_espressif
 
     def identify(self, port: Path) -> list[Identification]:
         from_descriptors = self.identify_from_descriptors(port)

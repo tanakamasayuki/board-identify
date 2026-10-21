@@ -121,7 +121,11 @@ def _identify(args: argparse.Namespace, runtime_dir: Path) -> int:
 def _unidentified(port: Path, probes: list[Probe]) -> str:
     """Why a port went unnamed, said as precisely as the probes can say it."""
     for probe in probes:
-        if not isinstance(probe, EspressifProbe) or probe.may_open(port):
+        if not isinstance(probe, EspressifProbe):
+            continue
+        # A port no ESP32 can be behind went unnamed for want of a probe, not
+        # because one was held back, so no flag would change that.
+        if not probe.supports(port) or probe.may_open(port):
             continue
         if not probe.probe_target:
             return (

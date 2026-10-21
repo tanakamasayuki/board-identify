@@ -1,10 +1,12 @@
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 import board_identify.cli as cli
 from board_identify.model import Identification
+from board_identify.probes.espressif import EspressifProbe
 
 
 def make_identification(port: Path) -> Identification:
@@ -180,3 +182,27 @@ def test_no_target_probe_reaches_the_probe_factory(
     cli.main(["identify", str(port)])
 
     assert asked == [False, True]
+
+
+def native_port(sysfs: Callable[..., Path], vid: str, pid: str) -> Path:
+    return sysfs(
+        port_name="ttyACM0",
+        attributes={"idVendor": vid, "idProduct": pid, "busnum": "001", "devnum": "007"},
+    )
+
+
+def test_unidentified_native_espressif_port_points_at_the_flag(
+    sysfs: Callable[..., Path],
+) -> None:
+    root = native_port(sysfs, "303a", "80ff")
+    message = cli._unidentified(Path("/dev/ttyACM0"), [EspressifProbe(sysfs_root=root)])
+    assert "--probe-native-usb" in message
+
+
+def test_unidentified_port_that_is_no_esp32_does_not_point_at_the_flag(
+    sysfs: Callable[..., Path],
+) -> None:
+    # A TinyUSB device: opening it with esptool would not tell anything either.
+    root = native_port(sysfs, "cafe", "4001")
+    message = cli._unidentified(Path("/dev/ttyACM0"), [EspressifProbe(sysfs_root=root)])
+    assert message == "unable to identify: /dev/ttyACM0"

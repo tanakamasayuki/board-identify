@@ -340,9 +340,11 @@ production, unattended test rigs, or anything driving hardware that must not res
 There, pin the devices with `/dev/serial/by-id/` or a udev rule as shown above.
 
 Current status: a port whose VID/PID a WCH-Link or a known Arduino board definition claims
-is settled from sysfs, which ends the probe chain before `esptool` runs. What still
-reaches `esptool` is what the descriptors genuinely leave open: a pair the table does not
-list, and any board behind a stock USB-UART bridge. See [Planned probes](#planned-probes).
+is settled from sysfs, which ends the probe chain before `esptool` runs. `esptool` is only
+considered for a port an ESP32 can actually be behind: a stock USB-UART bridge, or a port
+whose descriptors point at Espressif — its vendor ID `303a`, or a pair the table
+attributes to an ESP32. A pair nobody lists, such as a WCH-LinkE or a TinyUSB device, is
+left alone. See [Planned probes](#planned-probes).
 
 ## Planned probes
 

@@ -87,9 +87,26 @@ def test_supports_a_stock_usb_uart_bridge(sysfs: Sysfs) -> None:
     assert EspressifProbe(sysfs_root=root).supports(Path("/dev/ttyUSB0"))
 
 
-def test_supports_a_pair_no_board_definition_claims(sysfs: Sysfs) -> None:
-    root = sysfs(port_name="ttyUSB0", attributes=descriptors("0000", "0000"))
-    assert EspressifProbe(sysfs_root=root).supports(Path("/dev/ttyUSB0"))
+def test_supports_a_pair_under_the_espressif_vendor_id(sysfs: Sysfs) -> None:
+    # A PID Espressif handed out that no board definition lists yet.
+    root = sysfs(port_name="ttyACM0", attributes=descriptors("303a", "80ff"))
+    assert EspressifProbe(sysfs_root=root).supports(Path("/dev/ttyACM0"))
+
+
+@pytest.mark.parametrize(
+    ("vid", "pid"),
+    [
+        ("0000", "0000"),  # nothing claims it
+        ("1a86", "8010"),  # WCH-LinkE: the bridge vendor, but not a stock bridge ID
+        ("cafe", "4001"),  # TinyUSB's example VID/PID
+    ],
+)
+def test_does_not_support_a_pair_that_does_not_point_at_espressif(
+    sysfs: Sysfs, vid: str, pid: str
+) -> None:
+    # A vendor that programmed its own pair named something, and not an ESP32.
+    root = sysfs(port_name="ttyACM0", attributes=descriptors(vid, pid))
+    assert not EspressifProbe(sysfs_root=root).supports(Path("/dev/ttyACM0"))
 
 
 @pytest.mark.parametrize(

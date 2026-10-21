@@ -263,7 +263,9 @@ which is what a probe reads.
   releases it again, which interrupts timing rather than restarting. Either way this is a
   development-environment tool, not something for an environment that must stay stable.
 - The descriptor table is only as current as the last merge, and only as broad as the
-  board list upstream covers. A board neither lists is probed by talking to it, as before.
+  board list upstream covers. An ESP32 board that reports a pair neither lists, under a
+  vendor ID other than Espressif's, is not offered to `esptool`: a pair nobody lists is far
+  more often a WCH-LinkE or a TinyUSB device, and asking those only resets them.
 - Descriptors name a model, not a unit. A board that reports no USB serial number, such as
   many Arduino UNO R3 revisions, is recognised well enough to keep `esptool` away from it
   and still cannot be published under a stable name.
