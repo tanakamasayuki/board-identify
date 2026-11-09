@@ -1,7 +1,7 @@
 """CH32 names generated from ch32-device-data (MIT).
 
 Source: https://github.com/ch32-riscv-ug/ch32-device-data
-Source revision: 3eea1bcd447bba189cdd830671149e56de6ddd20
+Source revision: 04c58c6d7cbacdce1192d4836f02a5cd85d7c719
 Inputs: index/device_ids.csv and index/parts.csv.
 Regenerate with scripts/generate_wch_chips.py; do not edit by hand.
 Copyright (c) 2026 CH32 RISC-V User Group.
@@ -72,8 +72,7 @@ CHIP_NAMES: dict[int, str] = {
     0x2081050C: "CH32V208RBT6",
     0x2082050C: "CH32V208CBU6",
     0x2083050C: "CH32V208GBU6",
-    0x25004102: "CH32V103C8T6",
-    0x2500410F: "CH32V103R8T6",
+    0x2500410F: "CH32V103",
     0x30300504: "CH32V303VCT6",
     0x30310504: "CH32V303",
     0x30320504: "CH32V303RBT6",
