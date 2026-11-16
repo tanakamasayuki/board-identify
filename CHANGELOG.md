@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+
+## 1.0.2
 - (EN) Name a CH32V103 target `ch32v103` rather than `ch32v103r8t6`: the C8T6 reads the same device ID as the R8T6, so the ID names the series and not the part, and the link of a V103 board changes accordingly
 - (JA) CH32V103 のターゲット名を `ch32v103r8t6` から `ch32v103` に変更。C8T6 も R8T6 と同じデバイス ID を返し、ID で分かるのは型番ではなくシリーズまでのため。これに伴い V103 ボードのリンク名が変わる
 
