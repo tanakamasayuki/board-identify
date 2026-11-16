@@ -1,6 +1,8 @@
 # Changelog / 変更履歴
 
 ## Unreleased
+- (EN) Name a CH32V103 target `ch32v103` rather than `ch32v103r8t6`: the C8T6 reads the same device ID as the R8T6, so the ID names the series and not the part, and the link of a V103 board changes accordingly
+- (JA) CH32V103 のターゲット名を `ch32v103r8t6` から `ch32v103` に変更。C8T6 も R8T6 と同じデバイス ID を返し、ID で分かるのは型番ではなくシリーズまでのため。これに伴い V103 ボードのリンク名が変わる
 
 ## 1.0.1
 - (EN) Only offer a port to `esptool` when an ESP32 can be behind it — a stock USB-UART bridge, Espressif's vendor ID, or a pair the table attributes to an ESP32 — instead of every pair nobody lists, which kept reaching WCH-LinkE and TinyUSB devices
