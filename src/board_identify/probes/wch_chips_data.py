@@ -1,7 +1,7 @@
 """CH32 names generated from ch32-device-data (MIT).
 
 Source: https://github.com/ch32-riscv-ug/ch32-device-data
-Source revision: 04c58c6d7cbacdce1192d4836f02a5cd85d7c719
+Source revision: c6fe4962f59421ba83e3566e774c1fae39b05724
 Inputs: index/device_ids.csv and index/parts.csv.
 Regenerate with scripts/generate_wch_chips.py; do not edit by hand.
 Copyright (c) 2026 CH32 RISC-V User Group.
@@ -101,6 +101,7 @@ CHIP_NAMES: dict[int, str] = {
     0x46730000: "CH32V467VET6",
     0x46740001: "CH32V467WEU6",
     0x46750002: "CH32V467RET6",
+    0x46760003: "CH32V407KEU6",
 }
 
 # Mixed-series models resolve only to their shared peripheral family.
